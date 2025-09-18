@@ -1,0 +1,34 @@
+{
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "name": "landing-bot-restaurante",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "dependencies": {
+    "autoprefixer": "^10.4.21",
+    "bootstrap": "^5.3.8",
+    "lucide-react": "^0.544.0",
+    "postcss": "^8.5.6",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "vite": "^7.1.6"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mateuscassis/landing-bot-restaurante.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/mateuscassis/landing-bot-restaurante/issues"
+  },
+  "homepage": "https://github.com/mateuscassis/landing-bot-restaurante#readme"
+}

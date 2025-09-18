@@ -1,0 +1,8 @@
+body {
+  font-family: 'Montserrat', Arial, sans-serif;
+}
+
+h1, h2, h3, .display-4, .fw-bold {
+  font-family: 'Bebas Neue', Arial, sans-serif;
+  letter-spacing: 1px;
+}
