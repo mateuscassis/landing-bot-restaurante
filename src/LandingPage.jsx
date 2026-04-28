@@ -3,13 +3,21 @@ import {
   Bot, MessageCircle, CheckCircle, Clock, ClipboardList, ShoppingCart,
   CreditCard, Gift, BarChart2, ChevronDown, ChevronUp, Menu, X,
   Zap, Users, TrendingUp, Phone, ArrowRight, Shield, Headphones,
-  Star, Calendar, Bell, Send, Layers, MapPin, Scissors, Heart, Pill
+  Star, Calendar, Bell, Send, Layers, MapPin, Scissors, Heart, Pill,
+  Share2, Copy, Check
 } from "lucide-react";
 
 const whatsappNumber = "5516997594653";
 const whatsappLink = `https://wa.me/${whatsappNumber}?text=Ol%C3%A1!%20Tenho%20interesse%20no%20MenuBot%20para%20meu%20neg%C3%B3cio.`;
 const setupPrice = "247";
 const monthlyPrice = "87";
+
+const SHARE_URL = "https://menubot.app.br";
+const SHARE_TITLE = "MenuBot – Bot de WhatsApp para qualquer negócio";
+const SHARE_TEXT = "Automatize o atendimento do seu negócio no WhatsApp 24h por dia com o MenuBot!";
+const SHARE_WPP = `https://wa.me/?text=${encodeURIComponent(SHARE_TEXT + " " + SHARE_URL)}`;
+const SHARE_LINKEDIN = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(SHARE_URL)}`;
+const SHARE_X = `https://twitter.com/intent/tweet?text=${encodeURIComponent(SHARE_TEXT)}&url=${encodeURIComponent(SHARE_URL)}`;
 
 const faqs = [
   {
@@ -91,6 +99,23 @@ function StarRating({ count }) {
         <Star key={i} size={16} fill="#ffc107" color="#ffc107" />
       ))}
     </div>
+  );
+}
+
+function CopyLinkButton() {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(SHARE_URL);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {}
+  };
+  return (
+    <button onClick={handleCopy} className={`share-btn share-btn-copy${copied ? " copied" : ""}`} aria-label="Copiar link">
+      {copied ? <Check size={16} /> : <Copy size={16} />}
+      <span>{copied ? "Copiado!" : "Copiar link"}</span>
+    </button>
   );
 }
 
@@ -390,6 +415,27 @@ export default function LandingPage() {
       <footer className="menubot-footer">
         <div className="container text-center">
           <div className="footer-brand mb-2"><Bot size={22} className="me-2" /> MenuBot</div>
+
+          {/* Share section */}
+          <div className="footer-share">
+            <p className="footer-share-label"><Share2 size={14} className="me-1" /> Gostou? Compartilhe!</p>
+            <div className="footer-share-btns">
+              <a href={SHARE_WPP} target="_blank" rel="noopener noreferrer" className="share-btn share-btn-wpp" aria-label="Compartilhar no WhatsApp">
+                <MessageCircle size={16} />
+                <span>WhatsApp</span>
+              </a>
+              <a href={SHARE_LINKEDIN} target="_blank" rel="noopener noreferrer" className="share-btn share-btn-linkedin" aria-label="Compartilhar no LinkedIn">
+                <Users size={16} />
+                <span>LinkedIn</span>
+              </a>
+              <a href={SHARE_X} target="_blank" rel="noopener noreferrer" className="share-btn share-btn-x" aria-label="Compartilhar no X (Twitter)">
+                <Send size={16} />
+                <span>X / Twitter</span>
+              </a>
+              <CopyLinkButton />
+            </div>
+          </div>
+
           <p className="footer-copy">© {new Date().getFullYear()} MenuBot · Todos os direitos reservados.</p>
           <a href={whatsappLink} target="_blank" rel="noopener noreferrer" className="footer-wpp">
             <MessageCircle size={16} className="me-1" /> Falar pelo WhatsApp
