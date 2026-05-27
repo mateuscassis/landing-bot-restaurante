@@ -250,24 +250,20 @@ export default function LandingPage() {
     const safeChampionships = Number.isNaN(championships) ? 0 : championships;
     const normalizedName = normalizePlayerName(name);
 
-    let nextPlayers = [];
-
-    setPlayers((current) => {
-      const existingIndex = current.findIndex((player) => normalizePlayerName(player.name) === normalizedName);
-      if (existingIndex >= 0) {
-        nextPlayers = current.map((player, index) =>
-          index === existingIndex
-            ? {
-                ...player,
-                goals: player.goals + safeGoals,
-                assists: player.assists + safeAssists,
-                championships: (player.championships || 0) + safeChampionships,
-              }
-            : player
-        );
-        return nextPlayers;
-      }
-
+    const existingIndex = players.findIndex((player) => normalizePlayerName(player.name) === normalizedName);
+    let nextPlayers;
+    if (existingIndex >= 0) {
+      nextPlayers = players.map((player, index) =>
+        index === existingIndex
+          ? {
+              ...player,
+              goals: player.goals + safeGoals,
+              assists: player.assists + safeAssists,
+              championships: (player.championships || 0) + safeChampionships,
+            }
+          : player
+      );
+    } else {
       nextPlayers = [
         {
           id: nextPlayerId.current++,
@@ -276,10 +272,11 @@ export default function LandingPage() {
           assists: safeAssists,
           championships: safeChampionships,
         },
-        ...current,
+        ...players,
       ];
-      return nextPlayers;
-    });
+    }
+
+    setPlayers(nextPlayers);
 
     syncPlayersNow(nextPlayers);
     setFormData({ name: "", goals: "", assists: "", championships: "" });
@@ -306,21 +303,19 @@ export default function LandingPage() {
     const assists = Number.parseInt(editDraft.assists || "0", 10);
     const championships = Number.parseInt(editDraft.championships || "0", 10);
 
-    let nextPlayers = [];
-    setPlayers((current) => {
-      nextPlayers = current.map((player) =>
-        player.id === playerId
-          ? {
-              ...player,
-              name: name || player.name,
-              goals: Number.isNaN(goals) || goals < 0 ? 0 : goals,
-              assists: Number.isNaN(assists) || assists < 0 ? 0 : assists,
-              championships: Number.isNaN(championships) || championships < 0 ? 0 : championships,
-            }
-          : player
-      );
-      return nextPlayers;
-    });
+    const nextPlayers = players.map((player) =>
+      player.id === playerId
+        ? {
+            ...player,
+            name: name || player.name,
+            goals: Number.isNaN(goals) || goals < 0 ? 0 : goals,
+            assists: Number.isNaN(assists) || assists < 0 ? 0 : assists,
+            championships: Number.isNaN(championships) || championships < 0 ? 0 : championships,
+          }
+        : player
+    );
+
+    setPlayers(nextPlayers);
 
     syncPlayersNow(nextPlayers);
     cancelEdit();
