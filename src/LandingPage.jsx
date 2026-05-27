@@ -6,12 +6,13 @@ const groupLink = "https://wa.me/5511999999999?text=Quero%20participar%20do%20Fu
 const STORAGE_KEY = "fut-terca-players";
 const SHEETS_API_URL = (import.meta.env.VITE_SHEETS_API_URL || "").trim();
 const DEFAULT_PLAYER_ROLE = "linha";
-const DEFAULT_PLAYER_WEIGHT = 5;
+const DEFAULT_PLAYER_ATTACK = 5;
+const DEFAULT_PLAYER_DEFENSE = 5;
 
-function sanitizeWeight(weight) {
-  const parsed = Number(weight);
+function sanitizeRating(value, fallback = 5) {
+  const parsed = Number(value);
   if (Number.isNaN(parsed)) {
-    return DEFAULT_PLAYER_WEIGHT;
+    return fallback;
   }
   return Math.max(1, Math.min(10, parsed));
 }
@@ -41,7 +42,8 @@ function sanitizePlayers(players) {
       goals: Number.isFinite(player.goals) ? player.goals : 0,
       assists: Number.isFinite(player.assists) ? player.assists : 0,
       championships: Number.isFinite(player.championships) ? player.championships : 0,
-      weight: sanitizeWeight(player.weight),
+      attack: sanitizeRating(player.attack ?? player.weight, DEFAULT_PLAYER_ATTACK),
+      defense: sanitizeRating(player.defense ?? player.weight, DEFAULT_PLAYER_DEFENSE),
       role: sanitizeRole(player.role),
     }));
 }
@@ -77,7 +79,7 @@ function playersChanged(currentPlayers, incomingPlayers) {
 }
 
 function getHiddenLevelScore(player) {
-  return sanitizeWeight(player.weight);
+  return sanitizeRating(player.attack, DEFAULT_PLAYER_ATTACK) + sanitizeRating(player.defense, DEFAULT_PLAYER_DEFENSE);
 }
 
 function buildBalancedTeams(players, teamsCount, randomSeed) {
@@ -88,9 +90,10 @@ function buildBalancedTeams(players, teamsCount, randomSeed) {
   };
 
   const sortedPlayers = [...players].sort((a, b) => {
-    const weightDiff = sanitizeWeight(b.weight) - sanitizeWeight(a.weight);
-    if (weightDiff !== 0) {
-      return weightDiff;
+    const sumA = sanitizeRating(a.attack, DEFAULT_PLAYER_ATTACK) + sanitizeRating(a.defense, DEFAULT_PLAYER_DEFENSE);
+    const sumB = sanitizeRating(b.attack, DEFAULT_PLAYER_ATTACK) + sanitizeRating(b.defense, DEFAULT_PLAYER_DEFENSE);
+    if (sumB !== sumA) {
+      return sumB - sumA;
     }
 
     return randomByPlayer(a) - randomByPlayer(b);
@@ -100,29 +103,57 @@ function buildBalancedTeams(players, teamsCount, randomSeed) {
     id: index + 1,
     name: `Time ${index + 1}`,
     players: [],
-    totalHiddenScore: 0,
+    totalAttack: 0,
+    totalDefense: 0,
   }));
 
   const playersForTeams = sortedPlayers.slice(0, teamsCount * 4);
-
-  let teamIndex = 0;
-  let direction = 1;
+  const totalAttack = playersForTeams.reduce(
+    (sum, player) => sum + sanitizeRating(player.attack, DEFAULT_PLAYER_ATTACK),
+    0
+  );
+  const totalDefense = playersForTeams.reduce(
+    (sum, player) => sum + sanitizeRating(player.defense, DEFAULT_PLAYER_DEFENSE),
+    0
+  );
+  const targetAttackPerTeam = teamsCount ? totalAttack / teamsCount : 0;
+  const targetDefensePerTeam = teamsCount ? totalDefense / teamsCount : 0;
 
   playersForTeams.forEach((player) => {
-    teams[teamIndex].players.push(player);
-    teams[teamIndex].totalHiddenScore += getHiddenLevelScore(player);
+    const attack = sanitizeRating(player.attack, DEFAULT_PLAYER_ATTACK);
+    const defense = sanitizeRating(player.defense, DEFAULT_PLAYER_DEFENSE);
 
-    if (direction === 1) {
-      if (teamIndex === teams.length - 1) {
-        direction = -1;
-      } else {
-        teamIndex += 1;
-      }
-    } else if (teamIndex === 0) {
-      direction = 1;
-    } else {
-      teamIndex -= 1;
+    const candidates = teams
+      .map((team, index) => ({ team, index }))
+      .filter(({ team }) => team.players.length < 4)
+      .sort((a, b) => {
+        const attackA = a.team.totalAttack + attack;
+        const defenseA = a.team.totalDefense + defense;
+        const attackB = b.team.totalAttack + attack;
+        const defenseB = b.team.totalDefense + defense;
+
+        const scoreA =
+          Math.abs(attackA - targetAttackPerTeam) +
+          Math.abs(defenseA - targetDefensePerTeam) +
+          a.team.players.length * 0.15 +
+          randomByPlayer(player) * 0.05;
+        const scoreB =
+          Math.abs(attackB - targetAttackPerTeam) +
+          Math.abs(defenseB - targetDefensePerTeam) +
+          b.team.players.length * 0.15 +
+          randomByPlayer(player) * 0.05;
+
+        return scoreA - scoreB;
+      });
+
+    const selected = candidates[0]?.team;
+    if (!selected) {
+      return;
     }
+
+    selected.players.push(player);
+    selected.totalAttack += attack;
+    selected.totalDefense += defense;
   });
 
   return teams;
@@ -168,7 +199,8 @@ export default function LandingPage() {
     goals: "",
     assists: "",
     championships: "",
-    weight: String(DEFAULT_PLAYER_WEIGHT),
+    attack: String(DEFAULT_PLAYER_ATTACK),
+    defense: String(DEFAULT_PLAYER_DEFENSE),
     role: DEFAULT_PLAYER_ROLE,
   });
   const [searchTerm, setSearchTerm] = useState("");
@@ -185,7 +217,8 @@ export default function LandingPage() {
     goals: "0",
     assists: "0",
     championships: "0",
-    weight: String(DEFAULT_PLAYER_WEIGHT),
+    attack: String(DEFAULT_PLAYER_ATTACK),
+    defense: String(DEFAULT_PLAYER_DEFENSE),
     role: DEFAULT_PLAYER_ROLE,
   });
   const [isBulkEditing, setIsBulkEditing] = useState(false);
@@ -302,7 +335,8 @@ export default function LandingPage() {
         current.goals += player.goals;
         current.assists += player.assists;
         current.championships += player.championships || 0;
-        current.weight = Math.max(current.weight, sanitizeWeight(player.weight));
+        current.attack = Math.max(current.attack, sanitizeRating(player.attack, DEFAULT_PLAYER_ATTACK));
+        current.defense = Math.max(current.defense, sanitizeRating(player.defense, DEFAULT_PLAYER_DEFENSE));
         return;
       }
       grouped.set(key, {
@@ -311,7 +345,8 @@ export default function LandingPage() {
         goals: player.goals,
         assists: player.assists,
         championships: player.championships || 0,
-        weight: sanitizeWeight(player.weight),
+        attack: sanitizeRating(player.attack, DEFAULT_PLAYER_ATTACK),
+        defense: sanitizeRating(player.defense, DEFAULT_PLAYER_DEFENSE),
         role: sanitizeRole(player.role),
       });
     });
@@ -479,7 +514,8 @@ export default function LandingPage() {
     const goals = Number.parseInt(formData.goals || "0", 10);
     const assists = Number.parseInt(formData.assists || "0", 10);
     const championships = Number.parseInt(formData.championships || "0", 10);
-    const weight = sanitizeWeight(formData.weight);
+    const attack = sanitizeRating(formData.attack, DEFAULT_PLAYER_ATTACK);
+    const defense = sanitizeRating(formData.defense, DEFAULT_PLAYER_DEFENSE);
     const role = sanitizeRole(formData.role);
     if (!name) {
       return;
@@ -500,7 +536,8 @@ export default function LandingPage() {
               goals: player.goals + safeGoals,
               assists: player.assists + safeAssists,
               championships: (player.championships || 0) + safeChampionships,
-              weight,
+              attack,
+              defense,
               role,
             }
           : player
@@ -513,7 +550,8 @@ export default function LandingPage() {
           goals: safeGoals,
           assists: safeAssists,
           championships: safeChampionships,
-          weight,
+          attack,
+          defense,
           role,
         },
         ...players,
@@ -523,7 +561,15 @@ export default function LandingPage() {
     setPlayers(nextPlayers);
 
     syncPlayersNow(nextPlayers);
-    setFormData({ name: "", goals: "", assists: "", championships: "", weight: String(DEFAULT_PLAYER_WEIGHT), role: DEFAULT_PLAYER_ROLE });
+    setFormData({
+      name: "",
+      goals: "",
+      assists: "",
+      championships: "",
+      attack: String(DEFAULT_PLAYER_ATTACK),
+      defense: String(DEFAULT_PLAYER_DEFENSE),
+      role: DEFAULT_PLAYER_ROLE,
+    });
   }
 
   function toBulkDraft(player) {
@@ -532,7 +578,8 @@ export default function LandingPage() {
       goals: String(player.goals),
       assists: String(player.assists),
       championships: String(player.championships || 0),
-      weight: String(sanitizeWeight(player.weight)),
+      attack: String(sanitizeRating(player.attack, DEFAULT_PLAYER_ATTACK)),
+      defense: String(sanitizeRating(player.defense, DEFAULT_PLAYER_DEFENSE)),
       role: sanitizeRole(player.role),
     };
   }
@@ -579,7 +626,8 @@ export default function LandingPage() {
         goals: Number.isNaN(goals) || goals < 0 ? 0 : goals,
         assists: Number.isNaN(assists) || assists < 0 ? 0 : assists,
         championships: Number.isNaN(championships) || championships < 0 ? 0 : championships,
-        weight: sanitizeWeight(draft.weight),
+        attack: sanitizeRating(draft.attack, DEFAULT_PLAYER_ATTACK),
+        defense: sanitizeRating(draft.defense, DEFAULT_PLAYER_DEFENSE),
         role: sanitizeRole(draft.role),
       };
     });
@@ -600,7 +648,8 @@ export default function LandingPage() {
       goals: String(player.goals),
       assists: String(player.assists),
       championships: String(player.championships || 0),
-      weight: String(sanitizeWeight(player.weight)),
+      attack: String(sanitizeRating(player.attack, DEFAULT_PLAYER_ATTACK)),
+      defense: String(sanitizeRating(player.defense, DEFAULT_PLAYER_DEFENSE)),
       role: sanitizeRole(player.role),
     });
   }
@@ -612,7 +661,8 @@ export default function LandingPage() {
       goals: "0",
       assists: "0",
       championships: "0",
-      weight: String(DEFAULT_PLAYER_WEIGHT),
+      attack: String(DEFAULT_PLAYER_ATTACK),
+      defense: String(DEFAULT_PLAYER_DEFENSE),
       role: DEFAULT_PLAYER_ROLE,
     });
   }
@@ -622,7 +672,8 @@ export default function LandingPage() {
     const goals = Number.parseInt(editDraft.goals || "0", 10);
     const assists = Number.parseInt(editDraft.assists || "0", 10);
     const championships = Number.parseInt(editDraft.championships || "0", 10);
-    const weight = sanitizeWeight(editDraft.weight);
+    const attack = sanitizeRating(editDraft.attack, DEFAULT_PLAYER_ATTACK);
+    const defense = sanitizeRating(editDraft.defense, DEFAULT_PLAYER_DEFENSE);
     const role = sanitizeRole(editDraft.role);
 
     const nextPlayers = players.map((player) =>
@@ -633,7 +684,8 @@ export default function LandingPage() {
             goals: Number.isNaN(goals) || goals < 0 ? 0 : goals,
             assists: Number.isNaN(assists) || assists < 0 ? 0 : assists,
             championships: Number.isNaN(championships) || championships < 0 ? 0 : championships,
-            weight,
+            attack,
+            defense,
             role,
           }
         : player
@@ -827,8 +879,8 @@ export default function LandingPage() {
         <div className="container">
           <div className="section-header">
             <p className="section-eyebrow">Times equilibrados</p>
-            <h2>Montagem automatica por nivel interno</h2>
-            <p className="sync-note">As notas sao internas e nao sao exibidas para os jogadores.</p>
+            <h2>Montagem automatica por ataque e defesa</h2>
+            <p className="sync-note">Os times sao equilibrados priorizando notas de ataque e defesa.</p>
             <p className="sync-note">Goleiros sao fixos e ficam fora dessa montagem automatica.</p>
           </div>
 
@@ -981,10 +1033,28 @@ export default function LandingPage() {
                 />
               </label>
               <label>
-                Peso
+                Ataque
                 <select
-                  value={formData.weight}
-                  onChange={(event) => setFormData((current) => ({ ...current, weight: event.target.value }))}
+                  value={formData.attack}
+                  onChange={(event) => setFormData((current) => ({ ...current, attack: event.target.value }))}
+                >
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                  <option value="5">5</option>
+                  <option value="6">6</option>
+                  <option value="7">7</option>
+                  <option value="8">8</option>
+                  <option value="9">9</option>
+                  <option value="10">10</option>
+                </select>
+              </label>
+              <label>
+                Defesa
+                <select
+                  value={formData.defense}
+                  onChange={(event) => setFormData((current) => ({ ...current, defense: event.target.value }))}
                 >
                   <option value="1">1</option>
                   <option value="2">2</option>
@@ -1053,7 +1123,8 @@ export default function LandingPage() {
                     <tr>
                       <th>Jogador</th>
                       <th>Funcao</th>
-                      <th>Peso</th>
+                      <th>Ataque</th>
+                      <th>Defesa</th>
                       <th>Gols</th>
                       <th>Assistencias</th>
                       <th>Titulos</th>
@@ -1105,12 +1176,12 @@ export default function LandingPage() {
                             sanitizeRole(player.role) === "goleiro" ? "Goleiro" : "Linha"
                           )}
                         </td>
-                        <td data-label="Peso">
+                        <td data-label="Ataque">
                           {isBulkEditing ? (
                             <select
                               className="stat-select"
-                              value={bulkDrafts[player.id]?.weight || String(DEFAULT_PLAYER_WEIGHT)}
-                              onChange={(event) => updateBulkDraftField(player.id, "weight", event.target.value)}
+                              value={bulkDrafts[player.id]?.attack || String(DEFAULT_PLAYER_ATTACK)}
+                              onChange={(event) => updateBulkDraftField(player.id, "attack", event.target.value)}
                             >
                               <option value="1">1</option>
                               <option value="2">2</option>
@@ -1126,8 +1197,8 @@ export default function LandingPage() {
                           ) : editingPlayerId === player.id ? (
                             <select
                               className="stat-select"
-                              value={editDraft.weight}
-                              onChange={(event) => setEditDraft((current) => ({ ...current, weight: event.target.value }))}
+                              value={editDraft.attack}
+                              onChange={(event) => setEditDraft((current) => ({ ...current, attack: event.target.value }))}
                             >
                               <option value="1">1</option>
                               <option value="2">2</option>
@@ -1141,7 +1212,46 @@ export default function LandingPage() {
                               <option value="10">10</option>
                             </select>
                           ) : (
-                            sanitizeWeight(player.weight)
+                            sanitizeRating(player.attack, DEFAULT_PLAYER_ATTACK)
+                          )}
+                        </td>
+                        <td data-label="Defesa">
+                          {isBulkEditing ? (
+                            <select
+                              className="stat-select"
+                              value={bulkDrafts[player.id]?.defense || String(DEFAULT_PLAYER_DEFENSE)}
+                              onChange={(event) => updateBulkDraftField(player.id, "defense", event.target.value)}
+                            >
+                              <option value="1">1</option>
+                              <option value="2">2</option>
+                              <option value="3">3</option>
+                              <option value="4">4</option>
+                              <option value="5">5</option>
+                              <option value="6">6</option>
+                              <option value="7">7</option>
+                              <option value="8">8</option>
+                              <option value="9">9</option>
+                              <option value="10">10</option>
+                            </select>
+                          ) : editingPlayerId === player.id ? (
+                            <select
+                              className="stat-select"
+                              value={editDraft.defense}
+                              onChange={(event) => setEditDraft((current) => ({ ...current, defense: event.target.value }))}
+                            >
+                              <option value="1">1</option>
+                              <option value="2">2</option>
+                              <option value="3">3</option>
+                              <option value="4">4</option>
+                              <option value="5">5</option>
+                              <option value="6">6</option>
+                              <option value="7">7</option>
+                              <option value="8">8</option>
+                              <option value="9">9</option>
+                              <option value="10">10</option>
+                            </select>
+                          ) : (
+                            sanitizeRating(player.defense, DEFAULT_PLAYER_DEFENSE)
                           )}
                         </td>
                         <td data-label="Gols">
@@ -1226,7 +1336,7 @@ export default function LandingPage() {
                     ))}
                     {!displayedPlayers.length && (
                       <tr>
-                        <td colSpan="7">Nenhum jogador encontrado.</td>
+                        <td colSpan="8">Nenhum jogador encontrado.</td>
                       </tr>
                     )}
                   </tbody>
