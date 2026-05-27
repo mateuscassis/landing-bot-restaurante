@@ -97,6 +97,8 @@ export default function LandingPage() {
   const [isMutating, setIsMutating] = useState(false);
   const [formData, setFormData] = useState({ name: "", goals: "", assists: "", championships: "" });
   const [searchTerm, setSearchTerm] = useState("");
+  const [sortBy, setSortBy] = useState("name");
+  const [sortDirection, setSortDirection] = useState("asc");
   const [syncStatus, setSyncStatus] = useState(SHEETS_API_URL ? "syncing" : "local");
   const [editingPlayerId, setEditingPlayerId] = useState(null);
   const [editDraft, setEditDraft] = useState({ name: "", goals: "0", assists: "0", championships: "0" });
@@ -270,6 +272,23 @@ export default function LandingPage() {
     }
     return players.filter((player) => player.name.toLowerCase().includes(term));
   }, [players, searchTerm]);
+
+  const displayedPlayers = useMemo(() => {
+    const sorted = [...filteredPlayers].sort((a, b) => {
+      if (sortBy === "name") {
+        return a.name.localeCompare(b.name, "pt-BR");
+      }
+      if (sortBy === "goals") {
+        return a.goals - b.goals;
+      }
+      if (sortBy === "assists") {
+        return a.assists - b.assists;
+      }
+      return (a.championships || 0) - (b.championships || 0);
+    });
+
+    return sortDirection === "asc" ? sorted : sorted.reverse();
+  }, [filteredPlayers, sortBy, sortDirection]);
 
   function handleAddPlayer(event) {
     event.preventDefault();
@@ -593,6 +612,21 @@ export default function LandingPage() {
                 onChange={(event) => setSearchTerm(event.target.value)}
                 placeholder="Pesquisar jogador por nome..."
               />
+              <div className="players-filters">
+                <select value={sortBy} onChange={(event) => setSortBy(event.target.value)} className="sort-select">
+                  <option value="name">Jogador</option>
+                  <option value="goals">Gols</option>
+                  <option value="assists">Assistencias</option>
+                  <option value="championships">Titulos</option>
+                </select>
+                <button
+                  type="button"
+                  className="sort-toggle"
+                  onClick={() => setSortDirection((current) => (current === "asc" ? "desc" : "asc"))}
+                >
+                  {sortDirection === "asc" ? "Crescente" : "Decrescente"}
+                </button>
+              </div>
               <div className="players-scroll">
                 <table className="simple-table">
                   <thead>
@@ -605,7 +639,7 @@ export default function LandingPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredPlayers.map((player) => (
+                    {displayedPlayers.map((player) => (
                       <tr key={player.id}>
                         <td data-label="Jogador">
                           {editingPlayerId === player.id ? (
@@ -673,7 +707,7 @@ export default function LandingPage() {
                         </td>
                       </tr>
                     ))}
-                    {!filteredPlayers.length && (
+                    {!displayedPlayers.length && (
                       <tr>
                         <td colSpan="5">Nenhum jogador encontrado.</td>
                       </tr>

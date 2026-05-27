@@ -428,6 +428,32 @@ p {
   box-shadow: 0 0 0 3px rgba(46, 99, 207, 0.15);
 }
 
+.players-filters {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.sort-select,
+.sort-toggle {
+  border-radius: 10px;
+  border: 1px solid #cfd8eb;
+  padding: 8px 10px;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: #1f2f52;
+  background: #ffffff;
+}
+
+.sort-select {
+  flex: 1;
+}
+
+.sort-toggle {
+  min-width: 116px;
+  cursor: pointer;
+}
+
 .players-scroll {
   overflow-x: auto;
 }
@@ -808,6 +834,10 @@ p {
   .player-form,
   .players-list {
     padding: 12px;
+  }
+
+  .players-filters {
+    flex-direction: column;
   }
 
   .simple-table {
