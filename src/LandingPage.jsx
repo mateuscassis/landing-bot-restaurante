@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Shield, Star, Trophy, TrendingUp, Users, ArrowRight, Menu, X, Zap, UserPlus } from "lucide-react";
+import { Shield, Star, Trophy, TrendingUp, Users, ArrowRight, Menu, X, Zap } from "lucide-react";
 import initialPlayers from "./data/players.json";
 
 const groupLink = "https://wa.me/5511999999999?text=Quero%20participar%20do%20Fut%20de%20Terca";
@@ -93,6 +93,8 @@ export default function LandingPage() {
   const initialState = useMemo(() => loadInitialPlayers(), []);
   const [navOpen, setNavOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [isInitialSyncDone, setIsInitialSyncDone] = useState(!SHEETS_API_URL);
+  const [isMutating, setIsMutating] = useState(false);
   const [formData, setFormData] = useState({ name: "", goals: "", assists: "", championships: "" });
   const [searchTerm, setSearchTerm] = useState("");
   const [syncStatus, setSyncStatus] = useState(SHEETS_API_URL ? "syncing" : "local");
@@ -123,6 +125,7 @@ export default function LandingPage() {
     async function hydrateRemotePlayers() {
       if (!SHEETS_API_URL) {
         hasHydratedRemoteRef.current = true;
+        setIsInitialSyncDone(true);
         return;
       }
 
@@ -143,6 +146,7 @@ export default function LandingPage() {
       } finally {
         if (!cancelled) {
           hasHydratedRemoteRef.current = true;
+          setIsInitialSyncDone(true);
         }
       }
     }
@@ -160,11 +164,14 @@ export default function LandingPage() {
 
     lastLocalMutationRef.current = Date.now();
     setSyncStatus("syncing");
+    setIsMutating(true);
     try {
       await savePlayersToSheets(SHEETS_API_URL, nextPlayers);
       setSyncStatus("online");
     } catch {
       setSyncStatus("local");
+    } finally {
+      setIsMutating(false);
     }
   }
 
@@ -379,6 +386,18 @@ export default function LandingPage() {
     );
   }
 
+  if (!isInitialSyncDone) {
+    return (
+      <div className="sync-loading-screen">
+        <div className="sync-loading-card">
+          <div className="sync-spinner" aria-hidden="true" />
+          <h2>Sincronizando dados</h2>
+          <p>Aguarde, estamos conectando com o Google Sheets...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="league-root">
       <nav className={`league-nav${scrolled ? " scrolled" : ""}`}>
@@ -560,8 +579,8 @@ export default function LandingPage() {
                   placeholder="0"
                 />
               </label>
-              <button type="submit" className="btn-primary form-btn">
-                <UserPlus size={16} className="me-2" /> Salvar jogador
+              <button type="submit" className="btn-primary form-btn" disabled={isMutating}>
+                {isMutating ? "Salvando..." : "Salvar jogador"}
               </button>
             </form>
 
@@ -642,13 +661,13 @@ export default function LandingPage() {
                         <td data-label="Acoes">
                           {editingPlayerId === player.id ? (
                             <div className="row-actions">
-                              <button className="row-btn save" type="button" onClick={() => saveEdit(player.id)}>Salvar</button>
-                              <button className="row-btn cancel" type="button" onClick={cancelEdit}>Cancelar</button>
+                              <button className="row-btn save" type="button" onClick={() => saveEdit(player.id)} disabled={isMutating}>Salvar</button>
+                              <button className="row-btn cancel" type="button" onClick={cancelEdit} disabled={isMutating}>Cancelar</button>
                             </div>
                           ) : (
                             <div className="row-actions">
-                              <button className="row-btn edit" type="button" onClick={() => startEdit(player)}>Editar</button>
-                              <button className="row-btn delete" type="button" onClick={() => handleDeletePlayer(player.id)}>Excluir</button>
+                              <button className="row-btn edit" type="button" onClick={() => startEdit(player)} disabled={isMutating}>Editar</button>
+                              <button className="row-btn delete" type="button" onClick={() => handleDeletePlayer(player.id)} disabled={isMutating}>Excluir</button>
                             </div>
                           )}
                         </td>
@@ -672,6 +691,15 @@ export default function LandingPage() {
           <p>Fut de terca - Temporada 2026</p>
         </div>
       </footer>
+
+      {isMutating && (
+        <div className="action-loading-overlay" role="status" aria-live="polite" aria-label="Salvando alteracoes">
+          <div className="action-loading-box">
+            <div className="sync-spinner" aria-hidden="true" />
+            <p>Salvando alteracoes...</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
