@@ -7,9 +7,9 @@ function normalizeRole_(role) {
 function normalizeWeight_(weight) {
   var parsed = Number(weight);
   if (isNaN(parsed)) {
-    return 3;
+    return 5;
   }
-  return Math.max(1, Math.min(5, parsed));
+  return Math.max(1, Math.min(10, parsed));
 }
 
 function doGet() {
@@ -34,25 +34,25 @@ function doPost(e) {
 
 function seedFromJson() {
   const seedPlayers = [
-    { id: 1, name: "Lolis", goals: 0, assists: 2, championships: 0, weight: 3, role: "linha" },
-    { id: 2, name: "Lisso", goals: 2, assists: 0, championships: 0, weight: 3, role: "linha" },
-    { id: 3, name: "Neithan", goals: 0, assists: 0, championships: 0, weight: 3, role: "linha" },
-    { id: 4, name: "Gab", goals: 2, assists: 0, championships: 0, weight: 3, role: "linha" },
-    { id: 5, name: "Limite", goals: 0, assists: 0, championships: 0, weight: 3, role: "linha" },
-    { id: 6, name: "Kadu", goals: 0, assists: 0, championships: 0, weight: 3, role: "linha" },
-    { id: 7, name: "Geraldo", goals: 0, assists: 0, championships: 0, weight: 3, role: "linha" },
-    { id: 8, name: "Mateus", goals: 0, assists: 0, championships: 0, weight: 3, role: "linha" },
-    { id: 9, name: "Lucas", goals: 1, assists: 1, championships: 0, weight: 3, role: "linha" },
-    { id: 10, name: "Baguete", goals: 0, assists: 0, championships: 0, weight: 3, role: "linha" },
-    { id: 11, name: "Dibre", goals: 2, assists: 0, championships: 0, weight: 3, role: "linha" },
-    { id: 12, name: "Flex", goals: 0, assists: 1, championships: 0, weight: 3, role: "linha" },
-    { id: 13, name: "Mose", goals: 0, assists: 0, championships: 0, weight: 3, role: "linha" },
-    { id: 14, name: "Farinha", goals: 1, assists: 1, championships: 0, weight: 3, role: "linha" },
-    { id: 15, name: "Mesenha", goals: 0, assists: 0, championships: 0, weight: 3, role: "linha" },
-    { id: 16, name: "Aranha", goals: 0, assists: 0, championships: 0, weight: 3, role: "linha" },
-    { id: 17, name: "Kaue", goals: 1, assists: 1, championships: 0, weight: 3, role: "linha" },
-    { id: 18, name: "Misto", goals: 1, assists: 2, championships: 0, weight: 3, role: "linha" },
-    { id: 19, name: "Medina", goals: 2, assists: 0, championships: 0, weight: 3, role: "linha" }
+    { id: 1, name: "Lolis", goals: 0, assists: 2, championships: 0, weight: 5, role: "linha" },
+    { id: 2, name: "Lisso", goals: 2, assists: 0, championships: 0, weight: 5, role: "linha" },
+    { id: 3, name: "Neithan", goals: 0, assists: 0, championships: 0, weight: 5, role: "linha" },
+    { id: 4, name: "Gab", goals: 2, assists: 0, championships: 0, weight: 5, role: "linha" },
+    { id: 5, name: "Limite", goals: 0, assists: 0, championships: 0, weight: 5, role: "linha" },
+    { id: 6, name: "Kadu", goals: 0, assists: 0, championships: 0, weight: 5, role: "linha" },
+    { id: 7, name: "Geraldo", goals: 0, assists: 0, championships: 0, weight: 5, role: "linha" },
+    { id: 8, name: "Mateus", goals: 0, assists: 0, championships: 0, weight: 5, role: "linha" },
+    { id: 9, name: "Lucas", goals: 1, assists: 1, championships: 0, weight: 5, role: "linha" },
+    { id: 10, name: "Baguete", goals: 0, assists: 0, championships: 0, weight: 5, role: "linha" },
+    { id: 11, name: "Dibre", goals: 2, assists: 0, championships: 0, weight: 5, role: "linha" },
+    { id: 12, name: "Flex", goals: 0, assists: 1, championships: 0, weight: 5, role: "linha" },
+    { id: 13, name: "Mose", goals: 0, assists: 0, championships: 0, weight: 5, role: "linha" },
+    { id: 14, name: "Farinha", goals: 1, assists: 1, championships: 0, weight: 5, role: "linha" },
+    { id: 15, name: "Mesenha", goals: 0, assists: 0, championships: 0, weight: 5, role: "linha" },
+    { id: 16, name: "Aranha", goals: 0, assists: 0, championships: 0, weight: 5, role: "linha" },
+    { id: 17, name: "Kaue", goals: 1, assists: 1, championships: 0, weight: 5, role: "linha" },
+    { id: 18, name: "Misto", goals: 1, assists: 2, championships: 0, weight: 5, role: "linha" },
+    { id: 19, name: "Medina", goals: 2, assists: 0, championships: 0, weight: 5, role: "linha" }
   ];
   writePlayers_(seedPlayers);
 }
@@ -92,7 +92,7 @@ function readPlayers_() {
       goals: Number(row[safeGoalsIndex]) || 0,
       assists: Number(row[safeAssistsIndex]) || 0,
       championships: Number(row[safeChampionshipsIndex]) || 0,
-      weight: normalizeWeight_(safeWeightIndex >= 0 ? row[safeWeightIndex] : 3),
+      weight: normalizeWeight_(safeWeightIndex >= 0 ? row[safeWeightIndex] : 5),
       role: normalizeRole_(roleIndex >= 0 ? row[roleIndex] : "linha"),
     };
   });

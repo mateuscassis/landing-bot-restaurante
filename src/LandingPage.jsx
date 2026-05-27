@@ -6,14 +6,14 @@ const groupLink = "https://wa.me/5511999999999?text=Quero%20participar%20do%20Fu
 const STORAGE_KEY = "fut-terca-players";
 const SHEETS_API_URL = (import.meta.env.VITE_SHEETS_API_URL || "").trim();
 const DEFAULT_PLAYER_ROLE = "linha";
-const DEFAULT_PLAYER_WEIGHT = 3;
+const DEFAULT_PLAYER_WEIGHT = 5;
 
 function sanitizeWeight(weight) {
   const parsed = Number(weight);
   if (Number.isNaN(parsed)) {
     return DEFAULT_PLAYER_WEIGHT;
   }
-  return Math.max(1, Math.min(5, parsed));
+  return Math.max(1, Math.min(10, parsed));
 }
 
 function sanitizeRole(role) {
@@ -77,8 +77,7 @@ function playersChanged(currentPlayers, incomingPlayers) {
 }
 
 function getHiddenLevelScore(player) {
-  const score = sanitizeWeight(player.weight) * 2 + player.goals * 0.35 + player.assists * 0.25 + (player.championships || 0) * 0.8;
-  return Math.max(1, Math.min(10, score));
+  return sanitizeWeight(player.weight);
 }
 
 function buildBalancedTeams(players, teamsCount, randomSeed) {
@@ -92,16 +91,6 @@ function buildBalancedTeams(players, teamsCount, randomSeed) {
     const weightDiff = sanitizeWeight(b.weight) - sanitizeWeight(a.weight);
     if (weightDiff !== 0) {
       return weightDiff;
-    }
-
-    const scoreDiff = getHiddenLevelScore(b) - getHiddenLevelScore(a);
-    if (scoreDiff !== 0) {
-      return scoreDiff;
-    }
-
-    const contributionDiff = b.goals + b.assists - (a.goals + a.assists);
-    if (contributionDiff !== 0) {
-      return contributionDiff;
     }
 
     return randomByPlayer(a) - randomByPlayer(b);
@@ -920,11 +909,16 @@ export default function LandingPage() {
                   value={formData.weight}
                   onChange={(event) => setFormData((current) => ({ ...current, weight: event.target.value }))}
                 >
-                  <option value="1">1 - fraco</option>
+                  <option value="1">1</option>
                   <option value="2">2</option>
-                  <option value="3">3 - medio</option>
+                  <option value="3">3</option>
                   <option value="4">4</option>
-                  <option value="5">5 - forte</option>
+                  <option value="5">5</option>
+                  <option value="6">6</option>
+                  <option value="7">7</option>
+                  <option value="8">8</option>
+                  <option value="9">9</option>
+                  <option value="10">10</option>
                 </select>
               </label>
               <label>
@@ -1020,6 +1014,11 @@ export default function LandingPage() {
                               <option value="3">3</option>
                               <option value="4">4</option>
                               <option value="5">5</option>
+                              <option value="6">6</option>
+                              <option value="7">7</option>
+                              <option value="8">8</option>
+                              <option value="9">9</option>
+                              <option value="10">10</option>
                             </select>
                           ) : (
                             sanitizeWeight(player.weight)
