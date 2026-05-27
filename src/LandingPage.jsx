@@ -56,6 +56,10 @@ function loadInitialPlayers() {
   return sanitizePlayers(initialPlayers);
 }
 
+function playersChanged(currentPlayers, incomingPlayers) {
+  return JSON.stringify(currentPlayers) !== JSON.stringify(incomingPlayers);
+}
+
 async function fetchPlayersFromSheets(apiUrl) {
   const url = new URL(apiUrl);
   url.searchParams.set("_ts", String(Date.now()));
@@ -99,6 +103,7 @@ export default function LandingPage() {
   const [editingPlayerId, setEditingPlayerId] = useState(null);
   const [editDraft, setEditDraft] = useState({ name: "", goals: "0", assists: "0", championships: "0" });
   const hasHydratedRemoteRef = useRef(false);
+  const lastLocalMutationRef = useRef(0);
   const nextPlayerId = useRef(Math.max(...initialState.map((player) => player.id), 0) + 1);
   const [players, setPlayers] = useState(initialState);
 
@@ -157,6 +162,7 @@ export default function LandingPage() {
       return;
     }
 
+    lastLocalMutationRef.current = Date.now();
     setSyncStatus("syncing");
     try {
       await savePlayersToSheets(SHEETS_API_URL, nextPlayers);
@@ -165,6 +171,33 @@ export default function LandingPage() {
       setSyncStatus("local");
     }
   }
+
+  useEffect(() => {
+    if (!SHEETS_API_URL) {
+      return;
+    }
+
+    const intervalId = setInterval(async () => {
+      if (!hasHydratedRemoteRef.current || editingPlayerId !== null) {
+        return;
+      }
+
+      // Prevent polling from overriding a very recent local edit.
+      if (Date.now() - lastLocalMutationRef.current < 3000) {
+        return;
+      }
+
+      try {
+        const remotePlayers = await fetchPlayersFromSheets(SHEETS_API_URL);
+        setPlayers((current) => (playersChanged(current, remotePlayers) ? remotePlayers : current));
+        setSyncStatus("online");
+      } catch {
+        setSyncStatus("local");
+      }
+    }, 5000);
+
+    return () => clearInterval(intervalId);
+  }, [editingPlayerId]);
 
   const consolidatedPlayers = useMemo(() => {
     const grouped = new Map();
