@@ -67,10 +67,6 @@ async function fetchPlayersFromSheets(apiUrl) {
   const response = await fetch(url.toString(), {
     method: "GET",
     cache: "no-store",
-    headers: {
-      "Cache-Control": "no-cache",
-      Pragma: "no-cache",
-    },
   });
   if (!response.ok) {
     throw new Error("Falha ao carregar dados do Google Sheets");
