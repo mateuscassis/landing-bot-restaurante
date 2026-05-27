@@ -35,6 +35,11 @@ function loadInitialPlayers() {
     return sanitizePlayers(initialPlayers);
   }
 
+  if (SHEETS_API_URL) {
+    // When remote sync is enabled, avoid preferring stale local cache at boot.
+    return sanitizePlayers(initialPlayers);
+  }
+
   try {
     const stored = window.localStorage.getItem(STORAGE_KEY);
     if (stored) {
@@ -52,7 +57,17 @@ function loadInitialPlayers() {
 }
 
 async function fetchPlayersFromSheets(apiUrl) {
-  const response = await fetch(apiUrl, { method: "GET" });
+  const url = new URL(apiUrl);
+  url.searchParams.set("_ts", String(Date.now()));
+
+  const response = await fetch(url.toString(), {
+    method: "GET",
+    cache: "no-store",
+    headers: {
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
+    },
+  });
   if (!response.ok) {
     throw new Error("Falha ao carregar dados do Google Sheets");
   }
