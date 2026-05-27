@@ -6,7 +6,15 @@ const groupLink = "https://wa.me/5511999999999?text=Quero%20participar%20do%20Fu
 const STORAGE_KEY = "fut-terca-players";
 const SHEETS_API_URL = (import.meta.env.VITE_SHEETS_API_URL || "").trim();
 const DEFAULT_PLAYER_ROLE = "linha";
-const TEAM_SIZE = 4;
+const DEFAULT_PLAYER_WEIGHT = 3;
+
+function sanitizeWeight(weight) {
+  const parsed = Number(weight);
+  if (Number.isNaN(parsed)) {
+    return DEFAULT_PLAYER_WEIGHT;
+  }
+  return Math.max(1, Math.min(5, parsed));
+}
 
 function sanitizeRole(role) {
   return role === "goleiro" ? "goleiro" : DEFAULT_PLAYER_ROLE;
@@ -33,6 +41,7 @@ function sanitizePlayers(players) {
       goals: Number.isFinite(player.goals) ? player.goals : 0,
       assists: Number.isFinite(player.assists) ? player.assists : 0,
       championships: Number.isFinite(player.championships) ? player.championships : 0,
+      weight: sanitizeWeight(player.weight),
       role: sanitizeRole(player.role),
     }));
 }
@@ -68,7 +77,7 @@ function playersChanged(currentPlayers, incomingPlayers) {
 }
 
 function getHiddenLevelScore(player) {
-  const score = 5 + player.goals * 0.35 + player.assists * 0.25 + (player.championships || 0) * 0.8;
+  const score = sanitizeWeight(player.weight) * 2 + player.goals * 0.35 + player.assists * 0.25 + (player.championships || 0) * 0.8;
   return Math.max(1, Math.min(10, score));
 }
 
@@ -88,54 +97,14 @@ function buildBalancedTeams(players, teamsCount) {
     totalHiddenScore: 0,
   }));
 
-  const goalkeepers = sortedPlayers.filter((player) => player.role === "goleiro");
-  const linePlayers = sortedPlayers.filter((player) => player.role !== "goleiro");
-
-  function pickTeamIndex(preferIncompleteTeams = true) {
-    let candidates = teams;
-
-    if (preferIncompleteTeams) {
-      const incomplete = teams.filter((team) => team.players.length < TEAM_SIZE);
-      if (incomplete.length) {
-        candidates = incomplete;
-      }
-    }
-
-    const targetTeam = candidates.reduce((best, current) => {
-      if (best.players.length !== current.players.length) {
-        return best.players.length < current.players.length ? best : current;
-      }
-      if (best.totalHiddenScore !== current.totalHiddenScore) {
-        return best.totalHiddenScore < current.totalHiddenScore ? best : current;
-      }
-      return best.id < current.id ? best : current;
-    });
-
-    return teams.findIndex((team) => team.id === targetTeam.id);
-  }
-
-  function pushPlayer(teamIndex, player) {
-    teams[teamIndex].players.push(player);
-    teams[teamIndex].totalHiddenScore += getHiddenLevelScore(player);
-  }
-
-  // Prefer one goalkeeper per team before filling remaining spots.
-  goalkeepers.forEach((goalkeeper, goalkeeperIndex) => {
-    const teamIndex =
-      goalkeeperIndex < teamsCount ? goalkeeperIndex : pickTeamIndex(false);
-    pushPlayer(teamIndex, goalkeeper);
-  });
+  const playersForTeams = sortedPlayers.slice(0, teamsCount * 4);
 
   let teamIndex = 0;
   let direction = 1;
 
-  linePlayers.forEach((player) => {
-    const currentTeamIsFull = teams[teamIndex].players.length >= TEAM_SIZE;
-    if (currentTeamIsFull) {
-      teamIndex = pickTeamIndex();
-    }
-
-    pushPlayer(teamIndex, player);
+  playersForTeams.forEach((player) => {
+    teams[teamIndex].players.push(player);
+    teams[teamIndex].totalHiddenScore += getHiddenLevelScore(player);
 
     if (direction === 1) {
       if (teamIndex === teams.length - 1) {
@@ -193,12 +162,13 @@ export default function LandingPage() {
     goals: "",
     assists: "",
     championships: "",
+    weight: String(DEFAULT_PLAYER_WEIGHT),
     role: DEFAULT_PLAYER_ROLE,
   });
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState("name");
   const [sortDirection, setSortDirection] = useState("asc");
-  const [teamsCount, setTeamsCount] = useState(2);
+  const [weeklySelectedPlayerIds, setWeeklySelectedPlayerIds] = useState([]);
   const [balancedTeams, setBalancedTeams] = useState([]);
   const [syncStatus, setSyncStatus] = useState(SHEETS_API_URL ? "syncing" : "local");
   const [editingPlayerId, setEditingPlayerId] = useState(null);
@@ -207,9 +177,11 @@ export default function LandingPage() {
     goals: "0",
     assists: "0",
     championships: "0",
+    weight: String(DEFAULT_PLAYER_WEIGHT),
     role: DEFAULT_PLAYER_ROLE,
   });
   const hasHydratedRemoteRef = useRef(false);
+  const hasInitializedWeeklySelectionRef = useRef(false);
   const lastLocalMutationRef = useRef(0);
   const nextPlayerId = useRef(Math.max(...initialState.map((player) => player.id), 0) + 1);
   const [players, setPlayers] = useState(initialState);
@@ -320,6 +292,7 @@ export default function LandingPage() {
         current.goals += player.goals;
         current.assists += player.assists;
         current.championships += player.championships || 0;
+        current.weight = Math.max(current.weight, sanitizeWeight(player.weight));
         return;
       }
       grouped.set(key, {
@@ -328,6 +301,7 @@ export default function LandingPage() {
         goals: player.goals,
         assists: player.assists,
         championships: player.championships || 0,
+        weight: sanitizeWeight(player.weight),
         role: sanitizeRole(player.role),
       });
     });
@@ -398,9 +372,55 @@ export default function LandingPage() {
     return sortDirection === "asc" ? sorted : sorted.reverse();
   }, [filteredPlayers, sortBy, sortDirection]);
 
+  const weeklyAvailablePlayers = useMemo(
+    () =>
+      consolidatedPlayers
+        .filter((player) => sanitizeRole(player.role) !== "goleiro")
+        .sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
+    [consolidatedPlayers]
+  );
+
   useEffect(() => {
-    setBalancedTeams(buildBalancedTeams(consolidatedPlayers, teamsCount));
-  }, [consolidatedPlayers, teamsCount]);
+    const availableIds = new Set(weeklyAvailablePlayers.map((player) => player.id));
+
+    setWeeklySelectedPlayerIds((current) => {
+      if (!hasInitializedWeeklySelectionRef.current) {
+        hasInitializedWeeklySelectionRef.current = true;
+        return weeklyAvailablePlayers.map((player) => player.id);
+      }
+
+      return current.filter((id) => availableIds.has(id));
+    });
+  }, [weeklyAvailablePlayers]);
+
+  const weeklySelectedPlayers = useMemo(() => {
+    const selectedIds = new Set(weeklySelectedPlayerIds);
+    return weeklyAvailablePlayers.filter((player) => selectedIds.has(player.id));
+  }, [weeklyAvailablePlayers, weeklySelectedPlayerIds]);
+
+  const weeklyTeamsCount = Math.floor(weeklySelectedPlayers.length / 4);
+  const weeklyReservePlayers = useMemo(
+    () => weeklySelectedPlayers.slice(weeklyTeamsCount * 4),
+    [weeklySelectedPlayers, weeklyTeamsCount]
+  );
+
+  useEffect(() => {
+    setBalancedTeams(buildBalancedTeams(weeklySelectedPlayers, weeklyTeamsCount));
+  }, [weeklySelectedPlayers, weeklyTeamsCount]);
+
+  function toggleWeeklyPlayer(playerId) {
+    setWeeklySelectedPlayerIds((current) =>
+      current.includes(playerId) ? current.filter((id) => id !== playerId) : [...current, playerId]
+    );
+  }
+
+  function selectAllWeeklyPlayers() {
+    setWeeklySelectedPlayerIds(weeklyAvailablePlayers.map((player) => player.id));
+  }
+
+  function clearWeeklyPlayers() {
+    setWeeklySelectedPlayerIds([]);
+  }
 
   function handleAddPlayer(event) {
     event.preventDefault();
@@ -408,6 +428,7 @@ export default function LandingPage() {
     const goals = Number.parseInt(formData.goals || "0", 10);
     const assists = Number.parseInt(formData.assists || "0", 10);
     const championships = Number.parseInt(formData.championships || "0", 10);
+    const weight = sanitizeWeight(formData.weight);
     const role = sanitizeRole(formData.role);
     if (!name) {
       return;
@@ -428,6 +449,7 @@ export default function LandingPage() {
               goals: player.goals + safeGoals,
               assists: player.assists + safeAssists,
               championships: (player.championships || 0) + safeChampionships,
+              weight,
               role,
             }
           : player
@@ -440,6 +462,7 @@ export default function LandingPage() {
           goals: safeGoals,
           assists: safeAssists,
           championships: safeChampionships,
+          weight,
           role,
         },
         ...players,
@@ -449,7 +472,7 @@ export default function LandingPage() {
     setPlayers(nextPlayers);
 
     syncPlayersNow(nextPlayers);
-    setFormData({ name: "", goals: "", assists: "", championships: "", role: DEFAULT_PLAYER_ROLE });
+    setFormData({ name: "", goals: "", assists: "", championships: "", weight: String(DEFAULT_PLAYER_WEIGHT), role: DEFAULT_PLAYER_ROLE });
   }
 
   function startEdit(player) {
@@ -459,6 +482,7 @@ export default function LandingPage() {
       goals: String(player.goals),
       assists: String(player.assists),
       championships: String(player.championships || 0),
+      weight: String(sanitizeWeight(player.weight)),
       role: sanitizeRole(player.role),
     });
   }
@@ -470,6 +494,7 @@ export default function LandingPage() {
       goals: "0",
       assists: "0",
       championships: "0",
+      weight: String(DEFAULT_PLAYER_WEIGHT),
       role: DEFAULT_PLAYER_ROLE,
     });
   }
@@ -479,6 +504,7 @@ export default function LandingPage() {
     const goals = Number.parseInt(editDraft.goals || "0", 10);
     const assists = Number.parseInt(editDraft.assists || "0", 10);
     const championships = Number.parseInt(editDraft.championships || "0", 10);
+    const weight = sanitizeWeight(editDraft.weight);
     const role = sanitizeRole(editDraft.role);
 
     const nextPlayers = players.map((player) =>
@@ -489,6 +515,7 @@ export default function LandingPage() {
             goals: Number.isNaN(goals) || goals < 0 ? 0 : goals,
             assists: Number.isNaN(assists) || assists < 0 ? 0 : assists,
             championships: Number.isNaN(championships) || championships < 0 ? 0 : championships,
+            weight,
             role,
           }
         : player
@@ -676,40 +703,75 @@ export default function LandingPage() {
             <p className="section-eyebrow">Times equilibrados</p>
             <h2>Montagem automatica por nivel interno</h2>
             <p className="sync-note">As notas sao internas e nao sao exibidas para os jogadores.</p>
+            <p className="sync-note">Goleiros sao fixos e ficam fora dessa montagem automatica.</p>
           </div>
 
-          <div className="teams-controls">
-            <label htmlFor="teams-count">Quantidade de times</label>
-            <select
-              id="teams-count"
-              value={teamsCount}
-              onChange={(event) => setTeamsCount(Number.parseInt(event.target.value, 10))}
-            >
-              <option value="2">2 times</option>
-              <option value="3">3 times</option>
-              <option value="4">4 times</option>
-            </select>
+          <div className="weekly-selection">
+            <div className="weekly-selection-head">
+              <h3>Jogadores da semana</h3>
+              <p>{weeklySelectedPlayerIds.length} selecionados</p>
+            </div>
+            <div className="weekly-selection-actions">
+              <button type="button" className="sort-toggle" onClick={selectAllWeeklyPlayers}>Selecionar todos</button>
+              <button type="button" className="sort-toggle" onClick={clearWeeklyPlayers}>Limpar</button>
+            </div>
+            <div className="weekly-players-grid">
+              {weeklyAvailablePlayers.map((player) => {
+                const checked = weeklySelectedPlayerIds.includes(player.id);
+                return (
+                  <label key={player.id} className={`weekly-player-item${checked ? " checked" : ""}`}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleWeeklyPlayer(player.id)}
+                    />
+                    <span>{player.name}</span>
+                  </label>
+                );
+              })}
+            </div>
           </div>
 
-          <div className="teams-grid">
-            {balancedTeams.map((team) => (
-              <article key={team.id} className="team-card">
-                <h3>{team.name}</h3>
-                <p className="team-meta">{team.players.length} jogadores</p>
-                <ul>
-                  {team.players.map((player) => (
-                    <li key={player.id}>
-                      <span>
-                        {player.name}
-                        {player.role === "goleiro" && <strong className="role-pill">GK</strong>}
-                      </span>
-                      <small>{player.goals}G · {player.assists}A</small>
-                    </li>
-                  ))}
-                </ul>
-              </article>
-            ))}
-          </div>
+          {weeklySelectedPlayers.length ? (
+            <>
+              <div className="teams-controls">
+                <strong>Times fechados: {weeklyTeamsCount}</strong>
+                <span>{weeklyReservePlayers.length} reserva(s) para completar o próximo time de 4</span>
+              </div>
+            <div className="teams-grid">
+              {balancedTeams.map((team) => (
+                <article key={team.id} className="team-card">
+                  <h3>{team.name}</h3>
+                    <p className="team-meta">{team.players.length}/4 jogadores</p>
+                  <ul>
+                    {team.players.map((player) => (
+                      <li key={player.id}>
+                        <span>{player.name}</span>
+                        <small>{player.goals}G · {player.assists}A</small>
+                      </li>
+                    ))}
+                  </ul>
+                </article>
+              ))}
+              </div>
+              {weeklyReservePlayers.length > 0 && (
+                <div className="reserve-card">
+                  <h3>Reservas para o próximo time</h3>
+                  <p className="team-meta">Ficam de fora da montagem atual até fechar 4.</p>
+                  <ul>
+                    {weeklyReservePlayers.map((player) => (
+                      <li key={player.id}>
+                        <span>{player.name}</span>
+                        <small>{player.goals}G · {player.assists}A</small>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="sync-note">Selecione pelo menos um jogador de linha para montar os times.</p>
+          )}
         </div>
       </section>
 
@@ -767,6 +829,19 @@ export default function LandingPage() {
                 />
               </label>
               <label>
+                Peso
+                <select
+                  value={formData.weight}
+                  onChange={(event) => setFormData((current) => ({ ...current, weight: event.target.value }))}
+                >
+                  <option value="1">1 - fraco</option>
+                  <option value="2">2</option>
+                  <option value="3">3 - medio</option>
+                  <option value="4">4</option>
+                  <option value="5">5 - forte</option>
+                </select>
+              </label>
+              <label>
                 Funcao
                 <select
                   value={formData.role}
@@ -811,6 +886,7 @@ export default function LandingPage() {
                     <tr>
                       <th>Jogador</th>
                       <th>Funcao</th>
+                      <th>Peso</th>
                       <th>Gols</th>
                       <th>Assistencias</th>
                       <th>Titulos</th>
@@ -844,6 +920,23 @@ export default function LandingPage() {
                             </select>
                           ) : (
                             sanitizeRole(player.role) === "goleiro" ? "Goleiro" : "Linha"
+                          )}
+                        </td>
+                        <td data-label="Peso">
+                          {editingPlayerId === player.id ? (
+                            <select
+                              className="stat-select"
+                              value={editDraft.weight}
+                              onChange={(event) => setEditDraft((current) => ({ ...current, weight: event.target.value }))}
+                            >
+                              <option value="1">1</option>
+                              <option value="2">2</option>
+                              <option value="3">3</option>
+                              <option value="4">4</option>
+                              <option value="5">5</option>
+                            </select>
+                          ) : (
+                            sanitizeWeight(player.weight)
                           )}
                         </td>
                         <td data-label="Gols">
@@ -902,7 +995,7 @@ export default function LandingPage() {
                     ))}
                     {!displayedPlayers.length && (
                       <tr>
-                        <td colSpan="6">Nenhum jogador encontrado.</td>
+                        <td colSpan="7">Nenhum jogador encontrado.</td>
                       </tr>
                     )}
                   </tbody>

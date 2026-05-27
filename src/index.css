@@ -361,6 +361,78 @@ p {
   margin-bottom: 16px;
 }
 
+.teams-controls strong {
+  color: #102950;
+  font-size: 0.92rem;
+}
+
+.teams-controls span {
+  color: #5670a3;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.weekly-selection {
+  border-radius: 14px;
+  background: #ffffff;
+  border: 1px solid #e3e8f4;
+  box-shadow: 0 6px 18px rgba(10, 18, 38, 0.08);
+  padding: 14px;
+  margin-bottom: 12px;
+}
+
+.weekly-selection-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.weekly-selection-head h3 {
+  font-size: 1.45rem;
+}
+
+.weekly-selection-head p {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #5670a3;
+}
+
+.weekly-selection-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+}
+
+.weekly-players-grid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.weekly-player-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #d8e1f1;
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: #f8fbff;
+  cursor: pointer;
+  font-size: 0.86rem;
+  color: #20365f;
+}
+
+.weekly-player-item.checked {
+  border-color: #99b8f3;
+  background: #ebf2ff;
+}
+
+.weekly-player-item input {
+  margin: 0;
+}
+
 .teams-controls label {
   font-size: 0.86rem;
   font-weight: 700;
@@ -422,6 +494,43 @@ p {
 }
 
 .team-card li small {
+  color: #4f638d;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.reserve-card {
+  margin-top: 14px;
+  border-radius: 14px;
+  background: #ffffff;
+  border: 1px solid #e3e8f4;
+  box-shadow: 0 6px 18px rgba(10, 18, 38, 0.08);
+  padding: 14px;
+}
+
+.reserve-card h3 {
+  font-size: 1.45rem;
+}
+
+.reserve-card ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.reserve-card li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px dashed #e3e8f4;
+  padding-bottom: 6px;
+  font-size: 0.9rem;
+}
+
+.reserve-card li small {
   color: #4f638d;
   font-size: 0.76rem;
   font-weight: 700;
@@ -922,6 +1031,10 @@ p {
     grid-template-columns: 1fr;
   }
 
+  .weekly-players-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .fixtures-grid {
     grid-template-columns: 1fr;
   }
@@ -952,6 +1065,24 @@ p {
   .teams-controls {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .weekly-selection-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .weekly-selection-actions {
+    flex-direction: column;
+  }
+
+  .weekly-players-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .teams-controls {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .simple-table {
