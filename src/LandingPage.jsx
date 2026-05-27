@@ -119,7 +119,11 @@ function getPairRepeatCount(teamPlayers, incomingPlayer, pairHistory) {
 }
 
 function updatePairHistoryWithTeams(currentHistory, teams) {
-  const nextHistory = { ...currentHistory };
+  const nextHistory = Object.fromEntries(
+    Object.entries(currentHistory)
+      .map(([key, value]) => [key, value * 0.9])
+      .filter(([, value]) => value >= 0.05)
+  );
 
   teams.forEach((team) => {
     for (let i = 0; i < team.players.length; i += 1) {
@@ -156,7 +160,7 @@ function buildBalancedTeams(players, teamsCount, randomSeed, pairHistory = {}) {
   }));
 
   const playersForTeams = players.slice(0, teamsCount * 4);
-  const sortedPlayers = [...playersForTeams].sort((a, b) => {
+  const remainingPlayers = [...playersForTeams].sort((a, b) => {
     const averageDiff = getHiddenLevelScore(b) - getHiddenLevelScore(a);
     if (averageDiff !== 0) {
       return averageDiff;
@@ -165,37 +169,74 @@ function buildBalancedTeams(players, teamsCount, randomSeed, pairHistory = {}) {
     return randomByPlayer(a) - randomByPlayer(b);
   });
 
-  const targetAveragePerTeam = playersForTeams.reduce((acc, player) => acc + getHiddenLevelScore(player), 0) / teamsCount;
+  // Keep the classic snake distribution to prioritize weight balance.
+  const snakeOrder = [];
+  let teamIndex = 0;
+  let direction = 1;
 
-  sortedPlayers.forEach((player) => {
-    const playerScore = getHiddenLevelScore(player);
+  for (let slot = 0; slot < playersForTeams.length; slot += 1) {
+    snakeOrder.push(teamIndex);
 
-    let bestTeam = null;
-    let bestCost = Number.POSITIVE_INFINITY;
-
-    teams.forEach((team) => {
-      if (team.players.length >= 4) {
-        return;
+    if (direction === 1) {
+      if (teamIndex === teams.length - 1) {
+        direction = -1;
+      } else {
+        teamIndex += 1;
       }
+    } else if (teamIndex === 0) {
+      direction = 1;
+    } else {
+      teamIndex -= 1;
+    }
+  }
 
-      const projectedAverage = team.totalAverage + playerScore;
-      const balancePenalty = Math.abs(projectedAverage - targetAveragePerTeam);
-      const repeatPenalty = getPairRepeatCount(team.players, player, pairHistory);
-      const noise = randomByPlayer(player, team.id) * 0.25;
-      const totalCost = balancePenalty + repeatPenalty * 1.1 + noise;
+  const scoreTolerance = 0.55;
+  const minimumCandidatePool = 6;
 
-      if (totalCost < bestCost) {
-        bestCost = totalCost;
-        bestTeam = team;
-      }
-    });
-
-    if (!bestTeam) {
+  snakeOrder.forEach((targetTeamIndex) => {
+    const team = teams[targetTeamIndex];
+    if (!remainingPlayers.length || team.players.length >= 4) {
       return;
     }
 
-    bestTeam.players.push(player);
-    bestTeam.totalAverage += playerScore;
+    const topScore = getHiddenLevelScore(remainingPlayers[0]);
+    let lastCandidateIndex = Math.min(minimumCandidatePool - 1, remainingPlayers.length - 1);
+
+    for (let i = 1; i < remainingPlayers.length; i += 1) {
+      if (topScore - getHiddenLevelScore(remainingPlayers[i]) <= scoreTolerance) {
+        lastCandidateIndex = i;
+      } else {
+        break;
+      }
+    }
+
+    let selectedIndex = 0;
+    let selectedCost = Number.POSITIVE_INFINITY;
+
+    for (let i = 0; i <= lastCandidateIndex; i += 1) {
+      const candidate = remainingPlayers[i];
+      const repeatPenalty = team.players.reduce((acc, teammate) => {
+        const pairKey = createPairKey(teammate.id, candidate.id);
+        const repeatCount = pairHistory[pairKey] || 0;
+        if (repeatCount <= 0) {
+          return acc;
+        }
+
+        // Strongly discourage repeated pairs while keeping weight as the first filter.
+        return acc + repeatCount * repeatCount + 1.5;
+      }, 0);
+      const noise = randomByPlayer(candidate, team.id) * 0.2;
+      const cost = repeatPenalty * 2.2 + noise;
+
+      if (cost < selectedCost) {
+        selectedCost = cost;
+        selectedIndex = i;
+      }
+    }
+
+    const [selectedPlayer] = remainingPlayers.splice(selectedIndex, 1);
+    team.players.push(selectedPlayer);
+    team.totalAverage += getHiddenLevelScore(selectedPlayer);
   });
 
   return teams;
