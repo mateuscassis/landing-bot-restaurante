@@ -81,13 +81,30 @@ function getHiddenLevelScore(player) {
   return Math.max(1, Math.min(10, score));
 }
 
-function buildBalancedTeams(players, teamsCount) {
+function buildBalancedTeams(players, teamsCount, randomSeed) {
+  const randomSalt = Number.isFinite(randomSeed) ? randomSeed : Date.now();
+  const randomByPlayer = (player) => {
+    const base = Math.sin((player.id + 1) * 97 + randomSalt * 0.001) * 10000;
+    return base - Math.floor(base);
+  };
+
   const sortedPlayers = [...players].sort((a, b) => {
+    const weightDiff = sanitizeWeight(b.weight) - sanitizeWeight(a.weight);
+    if (weightDiff !== 0) {
+      return weightDiff;
+    }
+
     const scoreDiff = getHiddenLevelScore(b) - getHiddenLevelScore(a);
     if (scoreDiff !== 0) {
       return scoreDiff;
     }
-    return b.goals + b.assists - (a.goals + a.assists);
+
+    const contributionDiff = b.goals + b.assists - (a.goals + a.assists);
+    if (contributionDiff !== 0) {
+      return contributionDiff;
+    }
+
+    return randomByPlayer(a) - randomByPlayer(b);
   });
 
   const teams = Array.from({ length: teamsCount }, (_, index) => ({
@@ -169,6 +186,7 @@ export default function LandingPage() {
   const [weeklySearchTerm, setWeeklySearchTerm] = useState("");
   const [sortBy, setSortBy] = useState("name");
   const [sortDirection, setSortDirection] = useState("asc");
+  const [teamsDrawSeed, setTeamsDrawSeed] = useState(Date.now());
   const [weeklySelectedPlayerIds, setWeeklySelectedPlayerIds] = useState([]);
   const [balancedTeams, setBalancedTeams] = useState([]);
   const [syncStatus, setSyncStatus] = useState(SHEETS_API_URL ? "syncing" : "local");
@@ -414,8 +432,8 @@ export default function LandingPage() {
   );
 
   useEffect(() => {
-    setBalancedTeams(buildBalancedTeams(weeklySelectedPlayers, weeklyTeamsCount));
-  }, [weeklySelectedPlayers, weeklyTeamsCount]);
+    setBalancedTeams(buildBalancedTeams(weeklySelectedPlayers, weeklyTeamsCount, teamsDrawSeed));
+  }, [weeklySelectedPlayers, weeklyTeamsCount, teamsDrawSeed]);
 
   function toggleWeeklyPlayer(playerId) {
     setWeeklySelectedPlayerIds((current) =>
@@ -429,6 +447,10 @@ export default function LandingPage() {
 
   function clearWeeklyPlayers() {
     setWeeklySelectedPlayerIds([]);
+  }
+
+  function redrawTeams() {
+    setTeamsDrawSeed(Date.now());
   }
 
   function exportTeamsToWhatsApp() {
@@ -785,6 +807,14 @@ export default function LandingPage() {
               <div className="teams-controls">
                 <strong>Times fechados: {weeklyTeamsCount}</strong>
                 <span>{weeklyReservePlayers.length} reserva(s) para completar o próximo time de 4</span>
+                <button
+                  type="button"
+                  className="sort-toggle"
+                  onClick={redrawTeams}
+                  disabled={!balancedTeams.length}
+                >
+                  Sortear novamente
+                </button>
                 <button
                   type="button"
                   className="btn-primary teams-export-btn"
