@@ -293,6 +293,13 @@ p {
   font-size: clamp(1.8rem, 4vw, 2.5rem);
 }
 
+.sync-note {
+  margin-top: 8px;
+  font-size: 0.88rem;
+  color: #3b4f78;
+  font-weight: 600;
+}
+
 .section-eyebrow {
   display: inline-block;
   margin-bottom: 6px;

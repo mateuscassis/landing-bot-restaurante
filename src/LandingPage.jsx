@@ -3,6 +3,8 @@ import { Shield, Star, Trophy, TrendingUp, Users, ArrowRight, Menu, X, Zap, User
 import initialPlayers from "./data/players.json";
 
 const groupLink = "https://wa.me/5511999999999?text=Quero%20participar%20do%20Fut%20de%20Terca";
+const STORAGE_KEY = "fut-terca-players";
+const SHEETS_API_URL = (import.meta.env.VITE_SHEETS_API_URL || "").trim();
 
 function normalizePlayerName(name) {
   return name
@@ -12,21 +14,154 @@ function normalizePlayerName(name) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
+function sanitizePlayers(players) {
+  if (!Array.isArray(players)) {
+    return [];
+  }
+
+  return players
+    .filter((player) => player && typeof player.name === "string")
+    .map((player, index) => ({
+      id: Number.isFinite(player.id) ? player.id : index + 1,
+      name: player.name,
+      goals: Number.isFinite(player.goals) ? player.goals : 0,
+      assists: Number.isFinite(player.assists) ? player.assists : 0,
+      championships: Number.isFinite(player.championships) ? player.championships : 0,
+    }));
+}
+
+function loadInitialPlayers() {
+  if (typeof window === "undefined") {
+    return sanitizePlayers(initialPlayers);
+  }
+
+  try {
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      const sanitized = sanitizePlayers(parsed);
+      if (sanitized.length) {
+        return sanitized;
+      }
+    }
+  } catch {
+    // Fallback to seed data when localStorage is unavailable or invalid.
+  }
+
+  return sanitizePlayers(initialPlayers);
+}
+
+async function fetchPlayersFromSheets(apiUrl) {
+  const response = await fetch(apiUrl, { method: "GET" });
+  if (!response.ok) {
+    throw new Error("Falha ao carregar dados do Google Sheets");
+  }
+  const payload = await response.json();
+  return sanitizePlayers(payload.players || payload);
+}
+
+async function savePlayersToSheets(apiUrl, players) {
+  const response = await fetch(apiUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "text/plain;charset=utf-8",
+    },
+    body: JSON.stringify({ players }),
+  });
+
+  if (!response.ok) {
+    throw new Error("Falha ao salvar dados no Google Sheets");
+  }
+}
+
 export default function LandingPage() {
+  const initialState = useMemo(() => loadInitialPlayers(), []);
   const [navOpen, setNavOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [formData, setFormData] = useState({ name: "", goals: "", assists: "", championships: "" });
   const [searchTerm, setSearchTerm] = useState("");
+  const [syncStatus, setSyncStatus] = useState(SHEETS_API_URL ? "syncing" : "local");
   const [editingPlayerId, setEditingPlayerId] = useState(null);
   const [editDraft, setEditDraft] = useState({ name: "", goals: "0", assists: "0", championships: "0" });
-  const nextPlayerId = useRef(Math.max(...initialPlayers.map((player) => player.id), 0) + 1);
-  const [players, setPlayers] = useState(initialPlayers);
+  const hasHydratedRemoteRef = useRef(false);
+  const saveTimeoutRef = useRef(null);
+  const nextPlayerId = useRef(Math.max(...initialState.map((player) => player.id), 0) + 1);
+  const [players, setPlayers] = useState(initialState);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40);
     window.addEventListener("scroll", onScroll);
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(players));
+  }, [players]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function hydrateRemotePlayers() {
+      if (!SHEETS_API_URL) {
+        hasHydratedRemoteRef.current = true;
+        return;
+      }
+
+      setSyncStatus("syncing");
+      try {
+        const remotePlayers = await fetchPlayersFromSheets(SHEETS_API_URL);
+        if (!cancelled && remotePlayers.length) {
+          setPlayers(remotePlayers);
+          nextPlayerId.current = Math.max(...remotePlayers.map((player) => player.id), 0) + 1;
+        }
+        if (!cancelled) {
+          setSyncStatus("online");
+        }
+      } catch {
+        if (!cancelled) {
+          setSyncStatus("local");
+        }
+      } finally {
+        if (!cancelled) {
+          hasHydratedRemoteRef.current = true;
+        }
+      }
+    }
+
+    hydrateRemotePlayers();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!SHEETS_API_URL || !hasHydratedRemoteRef.current) {
+      return;
+    }
+
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = setTimeout(async () => {
+      try {
+        await savePlayersToSheets(SHEETS_API_URL, players);
+        setSyncStatus("online");
+      } catch {
+        setSyncStatus("local");
+      }
+    }, 600);
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [players]);
 
   const consolidatedPlayers = useMemo(() => {
     const grouped = new Map();
@@ -341,6 +476,11 @@ export default function LandingPage() {
           <div className="section-header">
             <p className="section-eyebrow">Cadastro</p>
             <h2>Adicionar jogador, gols e assistencias</h2>
+            <p className="sync-note">
+              {syncStatus === "online" && "Sincronizado com Google Sheets"}
+              {syncStatus === "syncing" && "Sincronizando com Google Sheets..."}
+              {syncStatus === "local" && "Modo local (sem conexao com Google Sheets)"}
+            </p>
           </div>
           <div className="register-grid">
             <form className="player-form" onSubmit={handleAddPlayer}>
