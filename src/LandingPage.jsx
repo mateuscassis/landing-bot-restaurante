@@ -192,6 +192,11 @@ function buildBalancedTeams(players, teamsCount, randomSeed, pairHistory = {}) {
 
   const scoreTolerance = 0.55;
   const minimumCandidatePool = 6;
+  const carrierThreshold = 8;
+  const eliteThreshold = 8;
+
+  const hasCarrier = (team) => team.players.some((player) => getHiddenLevelScore(player) >= carrierThreshold);
+  const hasElite = (team) => team.players.some((player) => getHiddenLevelScore(player) >= eliteThreshold);
 
   snakeOrder.forEach((targetTeamIndex) => {
     const team = teams[targetTeamIndex];
@@ -213,8 +218,14 @@ function buildBalancedTeams(players, teamsCount, randomSeed, pairHistory = {}) {
     let selectedIndex = 0;
     let selectedCost = Number.POSITIVE_INFINITY;
 
+    const teamsWithoutCarrier = teams.filter((candidateTeam) => !hasCarrier(candidateTeam)).length;
+    const carriersRemaining = remainingPlayers.filter((candidate) => getHiddenLevelScore(candidate) >= carrierThreshold).length;
+    const teamsWithoutElite = teams.filter((candidateTeam) => !hasElite(candidateTeam)).length;
+    const eliteRemaining = remainingPlayers.filter((candidate) => getHiddenLevelScore(candidate) >= eliteThreshold).length;
+
     for (let i = 0; i <= lastCandidateIndex; i += 1) {
       const candidate = remainingPlayers[i];
+      const candidateScore = getHiddenLevelScore(candidate);
       const repeatPenalty = team.players.reduce((acc, teammate) => {
         const pairKey = createPairKey(teammate.id, candidate.id);
         const repeatCount = pairHistory[pairKey] || 0;
@@ -225,8 +236,15 @@ function buildBalancedTeams(players, teamsCount, randomSeed, pairHistory = {}) {
         // Strongly discourage repeated pairs while keeping weight as the first filter.
         return acc + repeatCount * repeatCount + 1.5;
       }, 0);
+
+      // If there are enough 7.5+ players left, force each team to get at least one carrier.
+      const carrierPenalty = !hasCarrier(team) && candidateScore < carrierThreshold && carriersRemaining >= teamsWithoutCarrier ? 6 : 0;
+
+      // Avoid concentrating 8+ in one team while other teams still have none.
+      const elitePenalty = hasElite(team) && candidateScore >= eliteThreshold && eliteRemaining >= teamsWithoutElite ? 3.5 : 0;
+
       const noise = randomByPlayer(candidate, team.id) * 0.2;
-      const cost = repeatPenalty * 2.2 + noise;
+      const cost = repeatPenalty * 2.2 + carrierPenalty + elitePenalty + noise;
 
       if (cost < selectedCost) {
         selectedCost = cost;
