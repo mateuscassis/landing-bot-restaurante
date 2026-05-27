@@ -521,6 +521,12 @@ export default function LandingPage() {
       if (sortBy === "assists") {
         return a.assists - b.assists;
       }
+      if (sortBy === "attack") {
+        return sanitizeRating(a.attack, DEFAULT_PLAYER_ATTACK) - sanitizeRating(b.attack, DEFAULT_PLAYER_ATTACK);
+      }
+      if (sortBy === "defense") {
+        return sanitizeRating(a.defense, DEFAULT_PLAYER_DEFENSE) - sanitizeRating(b.defense, DEFAULT_PLAYER_DEFENSE);
+      }
       return (a.championships || 0) - (b.championships || 0);
     });
 
@@ -1221,6 +1227,8 @@ export default function LandingPage() {
                   <option value="name">Jogador</option>
                   <option value="goals">Gols</option>
                   <option value="assists">Assistencias</option>
+                  <option value="attack">Ataque</option>
+                  <option value="defense">Defesa</option>
                   <option value="championships">Titulos</option>
                 </select>
                 <button
