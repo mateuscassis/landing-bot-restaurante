@@ -672,6 +672,12 @@ p {
   margin-bottom: 10px;
 }
 
+.bulk-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
 .sort-select,
 .sort-toggle {
   border-radius: 10px;
@@ -1092,6 +1098,10 @@ p {
   }
 
   .players-filters {
+    flex-direction: column;
+  }
+
+  .bulk-actions {
     flex-direction: column;
   }
 

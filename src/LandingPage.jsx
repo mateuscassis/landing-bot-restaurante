@@ -188,6 +188,8 @@ export default function LandingPage() {
     weight: String(DEFAULT_PLAYER_WEIGHT),
     role: DEFAULT_PLAYER_ROLE,
   });
+  const [isBulkEditing, setIsBulkEditing] = useState(false);
+  const [bulkDrafts, setBulkDrafts] = useState({});
   const hasHydratedRemoteRef = useRef(false);
   const hasInitializedWeeklySelectionRef = useRef(false);
   const lastLocalMutationRef = useRef(0);
@@ -524,7 +526,74 @@ export default function LandingPage() {
     setFormData({ name: "", goals: "", assists: "", championships: "", weight: String(DEFAULT_PLAYER_WEIGHT), role: DEFAULT_PLAYER_ROLE });
   }
 
+  function toBulkDraft(player) {
+    return {
+      name: player.name,
+      goals: String(player.goals),
+      assists: String(player.assists),
+      championships: String(player.championships || 0),
+      weight: String(sanitizeWeight(player.weight)),
+      role: sanitizeRole(player.role),
+    };
+  }
+
+  function startBulkEdit() {
+    setEditingPlayerId(null);
+    const nextDrafts = {};
+    players.forEach((player) => {
+      nextDrafts[player.id] = toBulkDraft(player);
+    });
+    setBulkDrafts(nextDrafts);
+    setIsBulkEditing(true);
+  }
+
+  function cancelBulkEdit() {
+    setIsBulkEditing(false);
+    setBulkDrafts({});
+  }
+
+  function updateBulkDraftField(playerId, field, value) {
+    setBulkDrafts((current) => ({
+      ...current,
+      [playerId]: {
+        ...current[playerId],
+        [field]: value,
+      },
+    }));
+  }
+
+  function saveBulkEdit() {
+    const nextPlayers = players.map((player) => {
+      const draft = bulkDrafts[player.id];
+      if (!draft) {
+        return player;
+      }
+
+      const goals = Number.parseInt(draft.goals || "0", 10);
+      const assists = Number.parseInt(draft.assists || "0", 10);
+      const championships = Number.parseInt(draft.championships || "0", 10);
+
+      return {
+        ...player,
+        name: draft.name.trim() || player.name,
+        goals: Number.isNaN(goals) || goals < 0 ? 0 : goals,
+        assists: Number.isNaN(assists) || assists < 0 ? 0 : assists,
+        championships: Number.isNaN(championships) || championships < 0 ? 0 : championships,
+        weight: sanitizeWeight(draft.weight),
+        role: sanitizeRole(draft.role),
+      };
+    });
+
+    setPlayers(nextPlayers);
+    syncPlayersNow(nextPlayers);
+    cancelBulkEdit();
+  }
+
   function startEdit(player) {
+    if (isBulkEditing) {
+      return;
+    }
+
     setEditingPlayerId(player.id);
     setEditDraft({
       name: player.name,
@@ -580,6 +649,14 @@ export default function LandingPage() {
     const nextPlayers = players.filter((player) => player.id !== playerId);
     setPlayers(nextPlayers);
     syncPlayersNow(nextPlayers);
+
+    if (isBulkEditing) {
+      setBulkDrafts((current) => {
+        const nextDrafts = { ...current };
+        delete nextDrafts[playerId];
+        return nextDrafts;
+      });
+    }
 
     if (editingPlayerId === playerId) {
       cancelEdit();
@@ -960,6 +1037,16 @@ export default function LandingPage() {
                   {sortDirection === "asc" ? "Crescente" : "Decrescente"}
                 </button>
               </div>
+              <div className="bulk-actions">
+                {!isBulkEditing ? (
+                  <button type="button" className="row-btn edit" onClick={startBulkEdit} disabled={isMutating}>Editar em massa</button>
+                ) : (
+                  <>
+                    <button type="button" className="row-btn save" onClick={saveBulkEdit} disabled={isMutating}>Salvar tudo</button>
+                    <button type="button" className="row-btn cancel" onClick={cancelBulkEdit} disabled={isMutating}>Cancelar</button>
+                  </>
+                )}
+              </div>
               <div className="players-scroll">
                 <table className="simple-table">
                   <thead>
@@ -977,7 +1064,14 @@ export default function LandingPage() {
                     {displayedPlayers.map((player) => (
                       <tr key={player.id}>
                         <td data-label="Jogador">
-                          {editingPlayerId === player.id ? (
+                          {isBulkEditing ? (
+                            <input
+                              className="stat-input name-input"
+                              type="text"
+                              value={bulkDrafts[player.id]?.name || ""}
+                              onChange={(event) => updateBulkDraftField(player.id, "name", event.target.value)}
+                            />
+                          ) : editingPlayerId === player.id ? (
                             <input
                               className="stat-input name-input"
                               type="text"
@@ -989,7 +1083,16 @@ export default function LandingPage() {
                           )}
                         </td>
                         <td data-label="Funcao">
-                          {editingPlayerId === player.id ? (
+                          {isBulkEditing ? (
+                            <select
+                              className="stat-select"
+                              value={bulkDrafts[player.id]?.role || DEFAULT_PLAYER_ROLE}
+                              onChange={(event) => updateBulkDraftField(player.id, "role", event.target.value)}
+                            >
+                              <option value="linha">Linha</option>
+                              <option value="goleiro">Goleiro</option>
+                            </select>
+                          ) : editingPlayerId === player.id ? (
                             <select
                               className="stat-select"
                               value={editDraft.role}
@@ -1003,7 +1106,24 @@ export default function LandingPage() {
                           )}
                         </td>
                         <td data-label="Peso">
-                          {editingPlayerId === player.id ? (
+                          {isBulkEditing ? (
+                            <select
+                              className="stat-select"
+                              value={bulkDrafts[player.id]?.weight || String(DEFAULT_PLAYER_WEIGHT)}
+                              onChange={(event) => updateBulkDraftField(player.id, "weight", event.target.value)}
+                            >
+                              <option value="1">1</option>
+                              <option value="2">2</option>
+                              <option value="3">3</option>
+                              <option value="4">4</option>
+                              <option value="5">5</option>
+                              <option value="6">6</option>
+                              <option value="7">7</option>
+                              <option value="8">8</option>
+                              <option value="9">9</option>
+                              <option value="10">10</option>
+                            </select>
+                          ) : editingPlayerId === player.id ? (
                             <select
                               className="stat-select"
                               value={editDraft.weight}
@@ -1025,7 +1145,15 @@ export default function LandingPage() {
                           )}
                         </td>
                         <td data-label="Gols">
-                          {editingPlayerId === player.id ? (
+                          {isBulkEditing ? (
+                            <input
+                              className="stat-input"
+                              type="number"
+                              min="0"
+                              value={bulkDrafts[player.id]?.goals || "0"}
+                              onChange={(event) => updateBulkDraftField(player.id, "goals", event.target.value)}
+                            />
+                          ) : editingPlayerId === player.id ? (
                             <input
                               className="stat-input"
                               type="number"
@@ -1038,7 +1166,15 @@ export default function LandingPage() {
                           )}
                         </td>
                         <td data-label="Assistencias">
-                          {editingPlayerId === player.id ? (
+                          {isBulkEditing ? (
+                            <input
+                              className="stat-input"
+                              type="number"
+                              min="0"
+                              value={bulkDrafts[player.id]?.assists || "0"}
+                              onChange={(event) => updateBulkDraftField(player.id, "assists", event.target.value)}
+                            />
+                          ) : editingPlayerId === player.id ? (
                             <input
                               className="stat-input"
                               type="number"
@@ -1051,7 +1187,15 @@ export default function LandingPage() {
                           )}
                         </td>
                         <td data-label="Titulos">
-                          {editingPlayerId === player.id ? (
+                          {isBulkEditing ? (
+                            <input
+                              className="stat-input"
+                              type="number"
+                              min="0"
+                              value={bulkDrafts[player.id]?.championships || "0"}
+                              onChange={(event) => updateBulkDraftField(player.id, "championships", event.target.value)}
+                            />
+                          ) : editingPlayerId === player.id ? (
                             <input
                               className="stat-input"
                               type="number"
@@ -1064,7 +1208,9 @@ export default function LandingPage() {
                           )}
                         </td>
                         <td data-label="Acoes">
-                          {editingPlayerId === player.id ? (
+                          {isBulkEditing ? (
+                            <span className="sync-note">Edicao em massa</span>
+                          ) : editingPlayerId === player.id ? (
                             <div className="row-actions">
                               <button className="row-btn save" type="button" onClick={() => saveEdit(player.id)} disabled={isMutating}>Salvar</button>
                               <button className="row-btn cancel" type="button" onClick={cancelEdit} disabled={isMutating}>Cancelar</button>
