@@ -1,16 +1,24 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Shield, Star, TrendingUp, Users, ArrowRight, Menu, X, Zap, UserPlus } from "lucide-react";
+import { Shield, Star, Trophy, TrendingUp, Users, ArrowRight, Menu, X, Zap, UserPlus } from "lucide-react";
 import initialPlayers from "./data/players.json";
 
 const groupLink = "https://wa.me/5511999999999?text=Quero%20participar%20do%20Fut%20de%20Terca";
 
+function normalizePlayerName(name) {
+  return name
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
 export default function LandingPage() {
   const [navOpen, setNavOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const [formData, setFormData] = useState({ name: "", goals: "", assists: "" });
+  const [formData, setFormData] = useState({ name: "", goals: "", assists: "", championships: "" });
   const [searchTerm, setSearchTerm] = useState("");
   const [editingPlayerId, setEditingPlayerId] = useState(null);
-  const [editDraft, setEditDraft] = useState({ name: "", goals: "0", assists: "0" });
+  const [editDraft, setEditDraft] = useState({ name: "", goals: "0", assists: "0", championships: "0" });
   const nextPlayerId = useRef(Math.max(...initialPlayers.map((player) => player.id), 0) + 1);
   const [players, setPlayers] = useState(initialPlayers);
 
@@ -20,27 +28,65 @@ export default function LandingPage() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  const totalGoals = useMemo(() => players.reduce((acc, player) => acc + player.goals, 0), [players]);
-  const totalAssists = useMemo(() => players.reduce((acc, player) => acc + player.assists, 0), [players]);
+  const consolidatedPlayers = useMemo(() => {
+    const grouped = new Map();
+    players.forEach((player) => {
+      const key = normalizePlayerName(player.name);
+      const current = grouped.get(key);
+      if (current) {
+        current.goals += player.goals;
+        current.assists += player.assists;
+        current.championships += player.championships || 0;
+        return;
+      }
+      grouped.set(key, {
+        id: player.id,
+        name: player.name,
+        goals: player.goals,
+        assists: player.assists,
+        championships: player.championships || 0,
+      });
+    });
+    return Array.from(grouped.values());
+  }, [players]);
+
+  const totalGoals = useMemo(
+    () => consolidatedPlayers.reduce((acc, player) => acc + player.goals, 0),
+    [consolidatedPlayers]
+  );
+  const totalAssists = useMemo(
+    () => consolidatedPlayers.reduce((acc, player) => acc + player.assists, 0),
+    [consolidatedPlayers]
+  );
 
   const seasonStats = useMemo(() => {
-    const avgContribution = players.length ? ((totalGoals + totalAssists) / players.length).toFixed(1) : "0.0";
+    const avgContribution = consolidatedPlayers.length
+      ? ((totalGoals + totalAssists) / consolidatedPlayers.length).toFixed(1)
+      : "0.0";
     return [
-      { icon: <Users size={24} />, value: players.length, label: "Jogadores cadastrados" },
+      { icon: <Users size={24} />, value: consolidatedPlayers.length, label: "Jogadores cadastrados" },
       { icon: <Zap size={24} />, value: totalGoals, label: "Gols cadastrados" },
       { icon: <TrendingUp size={24} />, value: totalAssists, label: "Assistencias cadastradas" },
       { icon: <Star size={24} />, value: avgContribution, label: "Media por jogador" },
     ];
-  }, [players, totalAssists, totalGoals]);
+  }, [consolidatedPlayers, totalAssists, totalGoals]);
 
   const topScorers = useMemo(
-    () => [...players].sort((a, b) => b.goals - a.goals || b.assists - a.assists).slice(0, 5),
-    [players]
+    () => [...consolidatedPlayers].sort((a, b) => b.goals - a.goals || b.assists - a.assists).slice(0, 5),
+    [consolidatedPlayers]
   );
 
   const topAssists = useMemo(
-    () => [...players].sort((a, b) => b.assists - a.assists || b.goals - a.goals).slice(0, 5),
-    [players]
+    () => [...consolidatedPlayers].sort((a, b) => b.assists - a.assists || b.goals - a.goals).slice(0, 5),
+    [consolidatedPlayers]
+  );
+
+  const topChampions = useMemo(
+    () =>
+      [...consolidatedPlayers]
+        .sort((a, b) => b.championships - a.championships || b.goals - a.goals || b.assists - a.assists)
+        .slice(0, 5),
+    [consolidatedPlayers]
   );
 
   const filteredPlayers = useMemo(() => {
@@ -56,36 +102,65 @@ export default function LandingPage() {
     const name = formData.name.trim();
     const goals = Number.parseInt(formData.goals || "0", 10);
     const assists = Number.parseInt(formData.assists || "0", 10);
+    const championships = Number.parseInt(formData.championships || "0", 10);
     if (!name) {
       return;
     }
 
-    setPlayers((current) => [
-      {
-        id: nextPlayerId.current++,
-        name,
-        goals: Number.isNaN(goals) ? 0 : goals,
-        assists: Number.isNaN(assists) ? 0 : assists,
-      },
-      ...current,
-    ]);
-    setFormData({ name: "", goals: "", assists: "" });
+    const safeGoals = Number.isNaN(goals) ? 0 : goals;
+    const safeAssists = Number.isNaN(assists) ? 0 : assists;
+    const safeChampionships = Number.isNaN(championships) ? 0 : championships;
+    const normalizedName = normalizePlayerName(name);
+
+    setPlayers((current) => {
+      const existingIndex = current.findIndex((player) => normalizePlayerName(player.name) === normalizedName);
+      if (existingIndex >= 0) {
+        return current.map((player, index) =>
+          index === existingIndex
+            ? {
+                ...player,
+                goals: player.goals + safeGoals,
+                assists: player.assists + safeAssists,
+                championships: (player.championships || 0) + safeChampionships,
+              }
+            : player
+        );
+      }
+
+      return [
+        {
+          id: nextPlayerId.current++,
+          name,
+          goals: safeGoals,
+          assists: safeAssists,
+          championships: safeChampionships,
+        },
+        ...current,
+      ];
+    });
+    setFormData({ name: "", goals: "", assists: "", championships: "" });
   }
 
   function startEdit(player) {
     setEditingPlayerId(player.id);
-    setEditDraft({ name: player.name, goals: String(player.goals), assists: String(player.assists) });
+    setEditDraft({
+      name: player.name,
+      goals: String(player.goals),
+      assists: String(player.assists),
+      championships: String(player.championships || 0),
+    });
   }
 
   function cancelEdit() {
     setEditingPlayerId(null);
-    setEditDraft({ name: "", goals: "0", assists: "0" });
+    setEditDraft({ name: "", goals: "0", assists: "0", championships: "0" });
   }
 
   function saveEdit(playerId) {
     const name = editDraft.name.trim();
     const goals = Number.parseInt(editDraft.goals || "0", 10);
     const assists = Number.parseInt(editDraft.assists || "0", 10);
+    const championships = Number.parseInt(editDraft.championships || "0", 10);
     setPlayers((current) =>
       current.map((player) =>
         player.id === playerId
@@ -94,6 +169,7 @@ export default function LandingPage() {
               name: name || player.name,
               goals: Number.isNaN(goals) || goals < 0 ? 0 : goals,
               assists: Number.isNaN(assists) || assists < 0 ? 0 : assists,
+              championships: Number.isNaN(championships) || championships < 0 ? 0 : championships,
             }
           : player
       )
@@ -118,6 +194,20 @@ export default function LandingPage() {
     setNavOpen(false);
   }
 
+  function renderTrophies(count) {
+    if (!count) {
+      return <span className="no-trophies">-</span>;
+    }
+
+    return (
+      <span className="trophy-stack" aria-label={`${count} titulos`}>
+        {Array.from({ length: count }).map((_, index) => (
+          <Trophy key={index} size={14} />
+        ))}
+      </span>
+    );
+  }
+
   return (
     <div className="league-root">
       <nav className={`league-nav${scrolled ? " scrolled" : ""}`}>
@@ -128,9 +218,10 @@ export default function LandingPage() {
 
           <div className={`nav-links${navOpen ? " open" : ""}`}>
             {[
-              ["cadastro", "Cadastro"],
               ["artilharia", "Artilharia"],
               ["assistencias", "Assistencias"],
+              ["campeoes", "Campeoes"],
+              ["cadastro", "Cadastro"],
             ].map(([id, label]) => (
               <button key={id} onClick={() => scrollTo(id)} className="nav-link-btn">
                 {label}
@@ -176,6 +267,75 @@ export default function LandingPage() {
         </div>
       </section>
 
+      <section id="artilharia" className="section-pad section-alt">
+        <div className="container">
+          <div className="section-header">
+            <p className="section-eyebrow">Artilharia</p>
+            <h2>Top goleadores</h2>
+          </div>
+          <div className="ranking-grid">
+            {topScorers.map((player, index) => (
+              <article className={`ranking-card${index === 0 ? " top" : ""}`} key={player.name}>
+                <div className="ranking-head">
+                  <span className="badge-pos">#{index + 1}</span>
+                  <Star size={18} />
+                </div>
+                <h3 className="ranking-name">{player.name}</h3>
+                {renderTrophies(player.championships)}
+                <div className="ranking-value">{player.goals} gols</div>
+                <small>{player.assists} assistencias</small>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="assistencias" className="section-pad">
+        <div className="container">
+          <div className="section-header">
+            <p className="section-eyebrow">Assistencias</p>
+            <h2>Lideres de assistencia</h2>
+          </div>
+          <div className="ranking-grid">
+            {topAssists.map((player, index) => (
+              <article className={`ranking-card${index === 0 ? " top" : ""}`} key={player.name}>
+                <div className="ranking-head">
+                  <span className="badge-pos">#{index + 1}</span>
+                  <TrendingUp size={18} />
+                </div>
+                <h3 className="ranking-name">{player.name}</h3>
+                {renderTrophies(player.championships)}
+                <div className="ranking-value">{player.assists} assistencias</div>
+                <small>{player.goals} gols</small>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="campeoes" className="section-pad section-alt">
+        <div className="container">
+          <div className="section-header">
+            <p className="section-eyebrow">Campeoes</p>
+            <h2>Ranking de campeoes</h2>
+          </div>
+          <div className="ranking-grid">
+            {topChampions.map((player, index) => (
+              <article className={`ranking-card${index === 0 ? " top" : ""}`} key={player.name}>
+                <div className="ranking-head">
+                  <span className="badge-pos">#{index + 1}</span>
+                  <Trophy size={18} />
+                </div>
+                <h3 className="ranking-name">{player.name}</h3>
+                {renderTrophies(player.championships)}
+                <div className="ranking-value">{player.championships} titulos</div>
+                <small>{player.goals} gols · {player.assists} assistencias</small>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
       <section id="cadastro" className="section-pad">
         <div className="container">
           <div className="section-header">
@@ -214,6 +374,16 @@ export default function LandingPage() {
                   placeholder="0"
                 />
               </label>
+              <label>
+                Titulos de campeao
+                <input
+                  type="number"
+                  min="0"
+                  value={formData.championships}
+                  onChange={(event) => setFormData((current) => ({ ...current, championships: event.target.value }))}
+                  placeholder="0"
+                />
+              </label>
               <button type="submit" className="btn-primary form-btn">
                 <UserPlus size={16} className="me-2" /> Salvar jogador
               </button>
@@ -235,6 +405,7 @@ export default function LandingPage() {
                       <th>Jogador</th>
                       <th>Gols</th>
                       <th>Assistencias</th>
+                      <th>Titulos</th>
                       <th>Acoes</th>
                     </tr>
                   </thead>
@@ -279,6 +450,19 @@ export default function LandingPage() {
                             player.assists
                           )}
                         </td>
+                        <td data-label="Titulos">
+                          {editingPlayerId === player.id ? (
+                            <input
+                              className="stat-input"
+                              type="number"
+                              min="0"
+                              value={editDraft.championships}
+                              onChange={(event) => setEditDraft((current) => ({ ...current, championships: event.target.value }))}
+                            />
+                          ) : (
+                            renderTrophies(player.championships)
+                          )}
+                        </td>
                         <td data-label="Acoes">
                           {editingPlayerId === player.id ? (
                             <div className="row-actions">
@@ -296,57 +480,13 @@ export default function LandingPage() {
                     ))}
                     {!filteredPlayers.length && (
                       <tr>
-                        <td colSpan="4">Nenhum jogador encontrado.</td>
+                        <td colSpan="5">Nenhum jogador encontrado.</td>
                       </tr>
                     )}
                   </tbody>
                 </table>
               </div>
             </div>
-          </div>
-        </div>
-      </section>
-
-      <section id="artilharia" className="section-pad section-alt">
-        <div className="container">
-          <div className="section-header">
-            <p className="section-eyebrow">Artilharia</p>
-            <h2>Top goleadores</h2>
-          </div>
-          <div className="ranking-grid">
-            {topScorers.map((player, index) => (
-              <article className={`ranking-card${index === 0 ? " top" : ""}`} key={player.name}>
-                <div className="ranking-head">
-                  <span className="badge-pos">#{index + 1}</span>
-                  <Star size={18} />
-                </div>
-                <h3>{player.name}</h3>
-                <div className="ranking-value">{player.goals} gols</div>
-                <small>{player.assists} assistencias</small>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section id="assistencias" className="section-pad">
-        <div className="container">
-          <div className="section-header">
-            <p className="section-eyebrow">Assistencias</p>
-            <h2>Lideres de assistencia</h2>
-          </div>
-          <div className="ranking-grid">
-            {topAssists.map((player, index) => (
-              <article className={`ranking-card${index === 0 ? " top" : ""}`} key={player.name}>
-                <div className="ranking-head">
-                  <span className="badge-pos">#{index + 1}</span>
-                  <TrendingUp size={18} />
-                </div>
-                <h3>{player.name}</h3>
-                <div className="ranking-value">{player.assists} assistencias</div>
-                <small>{player.goals} gols</small>
-              </article>
-            ))}
           </div>
         </div>
       </section>

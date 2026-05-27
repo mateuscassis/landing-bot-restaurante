@@ -397,6 +397,18 @@ p {
   background: #f6f9ff;
 }
 
+.trophy-stack {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: #d29507;
+}
+
+.no-trophies {
+  color: #94a3b8;
+  font-weight: 700;
+}
+
 .stat-input {
   width: 76px;
   border-radius: 8px;
@@ -538,6 +550,10 @@ p {
 .ranking-card h3 {
   margin-top: 10px;
   font-size: 1.3rem;
+}
+
+.ranking-name {
+  margin-top: 10px;
 }
 
 .ranking-card p {
