@@ -99,7 +99,6 @@ export default function LandingPage() {
   const [editingPlayerId, setEditingPlayerId] = useState(null);
   const [editDraft, setEditDraft] = useState({ name: "", goals: "0", assists: "0", championships: "0" });
   const hasHydratedRemoteRef = useRef(false);
-  const saveTimeoutRef = useRef(null);
   const nextPlayerId = useRef(Math.max(...initialState.map((player) => player.id), 0) + 1);
   const [players, setPlayers] = useState(initialState);
 
@@ -153,30 +152,19 @@ export default function LandingPage() {
     };
   }, []);
 
-  useEffect(() => {
+  async function syncPlayersNow(nextPlayers) {
     if (!SHEETS_API_URL || !hasHydratedRemoteRef.current) {
       return;
     }
 
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
+    setSyncStatus("syncing");
+    try {
+      await savePlayersToSheets(SHEETS_API_URL, nextPlayers);
+      setSyncStatus("online");
+    } catch {
+      setSyncStatus("local");
     }
-
-    saveTimeoutRef.current = setTimeout(async () => {
-      try {
-        await savePlayersToSheets(SHEETS_API_URL, players);
-        setSyncStatus("online");
-      } catch {
-        setSyncStatus("local");
-      }
-    }, 600);
-
-    return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-    };
-  }, [players]);
+  }
 
   const consolidatedPlayers = useMemo(() => {
     const grouped = new Map();
@@ -262,10 +250,12 @@ export default function LandingPage() {
     const safeChampionships = Number.isNaN(championships) ? 0 : championships;
     const normalizedName = normalizePlayerName(name);
 
+    let nextPlayers = [];
+
     setPlayers((current) => {
       const existingIndex = current.findIndex((player) => normalizePlayerName(player.name) === normalizedName);
       if (existingIndex >= 0) {
-        return current.map((player, index) =>
+        nextPlayers = current.map((player, index) =>
           index === existingIndex
             ? {
                 ...player,
@@ -275,9 +265,10 @@ export default function LandingPage() {
               }
             : player
         );
+        return nextPlayers;
       }
 
-      return [
+      nextPlayers = [
         {
           id: nextPlayerId.current++,
           name,
@@ -287,7 +278,10 @@ export default function LandingPage() {
         },
         ...current,
       ];
+      return nextPlayers;
     });
+
+    syncPlayersNow(nextPlayers);
     setFormData({ name: "", goals: "", assists: "", championships: "" });
   }
 
@@ -311,8 +305,10 @@ export default function LandingPage() {
     const goals = Number.parseInt(editDraft.goals || "0", 10);
     const assists = Number.parseInt(editDraft.assists || "0", 10);
     const championships = Number.parseInt(editDraft.championships || "0", 10);
-    setPlayers((current) =>
-      current.map((player) =>
+
+    let nextPlayers = [];
+    setPlayers((current) => {
+      nextPlayers = current.map((player) =>
         player.id === playerId
           ? {
               ...player,
@@ -322,18 +318,19 @@ export default function LandingPage() {
               championships: Number.isNaN(championships) || championships < 0 ? 0 : championships,
             }
           : player
-      )
-    );
+      );
+      return nextPlayers;
+    });
+
+    syncPlayersNow(nextPlayers);
     cancelEdit();
   }
 
   function handleDeletePlayer(playerId) {
-    const confirmed = window.confirm("Tem certeza que deseja excluir este jogador?");
-    if (!confirmed) {
-      return;
-    }
+    const nextPlayers = players.filter((player) => player.id !== playerId);
+    setPlayers(nextPlayers);
+    syncPlayersNow(nextPlayers);
 
-    setPlayers((current) => current.filter((player) => player.id !== playerId));
     if (editingPlayerId === playerId) {
       cancelEdit();
     }
