@@ -166,6 +166,7 @@ export default function LandingPage() {
     role: DEFAULT_PLAYER_ROLE,
   });
   const [searchTerm, setSearchTerm] = useState("");
+  const [weeklySearchTerm, setWeeklySearchTerm] = useState("");
   const [sortBy, setSortBy] = useState("name");
   const [sortDirection, setSortDirection] = useState("asc");
   const [weeklySelectedPlayerIds, setWeeklySelectedPlayerIds] = useState([]);
@@ -398,6 +399,14 @@ export default function LandingPage() {
     return weeklyAvailablePlayers.filter((player) => selectedIds.has(player.id));
   }, [weeklyAvailablePlayers, weeklySelectedPlayerIds]);
 
+  const filteredWeeklyAvailablePlayers = useMemo(() => {
+    const term = weeklySearchTerm.trim().toLowerCase();
+    if (!term) {
+      return weeklyAvailablePlayers;
+    }
+    return weeklyAvailablePlayers.filter((player) => player.name.toLowerCase().includes(term));
+  }, [weeklyAvailablePlayers, weeklySearchTerm]);
+
   const weeklyTeamsCount = Math.floor(weeklySelectedPlayers.length / 4);
   const weeklyReservePlayers = useMemo(
     () => weeklySelectedPlayers.slice(weeklyTeamsCount * 4),
@@ -420,6 +429,35 @@ export default function LandingPage() {
 
   function clearWeeklyPlayers() {
     setWeeklySelectedPlayerIds([]);
+  }
+
+  function exportTeamsToWhatsApp() {
+    if (!balancedTeams.length) {
+      return;
+    }
+
+    const lines = ["Times da semana", ""];
+
+    balancedTeams.forEach((team) => {
+      lines.push(`${team.name} (${team.players.length}/4)`);
+      team.players.forEach((player) => {
+        lines.push(`- ${player.name}`);
+      });
+      lines.push("");
+    });
+
+    if (weeklyReservePlayers.length) {
+      lines.push("Reservas");
+      weeklyReservePlayers.forEach((player) => {
+        lines.push(`- ${player.name}`);
+      });
+      lines.push("");
+    }
+
+    lines.push("Goleiros fixos ficam fora da montagem automatica.");
+
+    const message = encodeURIComponent(lines.join("\n"));
+    window.open(`https://wa.me/?text=${message}`, "_blank", "noopener,noreferrer");
   }
 
   function handleAddPlayer(event) {
@@ -715,8 +753,15 @@ export default function LandingPage() {
               <button type="button" className="sort-toggle" onClick={selectAllWeeklyPlayers}>Selecionar todos</button>
               <button type="button" className="sort-toggle" onClick={clearWeeklyPlayers}>Limpar</button>
             </div>
+            <input
+              className="weekly-search-input"
+              type="text"
+              value={weeklySearchTerm}
+              onChange={(event) => setWeeklySearchTerm(event.target.value)}
+              placeholder="Pesquisar jogador da semana..."
+            />
             <div className="weekly-players-grid">
-              {weeklyAvailablePlayers.map((player) => {
+              {filteredWeeklyAvailablePlayers.map((player) => {
                 const checked = weeklySelectedPlayerIds.includes(player.id);
                 return (
                   <label key={player.id} className={`weekly-player-item${checked ? " checked" : ""}`}>
@@ -729,6 +774,9 @@ export default function LandingPage() {
                   </label>
                 );
               })}
+              {!filteredWeeklyAvailablePlayers.length && (
+                <p className="weekly-empty">Nenhum jogador encontrado na busca.</p>
+              )}
             </div>
           </div>
 
@@ -737,6 +785,14 @@ export default function LandingPage() {
               <div className="teams-controls">
                 <strong>Times fechados: {weeklyTeamsCount}</strong>
                 <span>{weeklyReservePlayers.length} reserva(s) para completar o próximo time de 4</span>
+                <button
+                  type="button"
+                  className="btn-primary teams-export-btn"
+                  onClick={exportTeamsToWhatsApp}
+                  disabled={!balancedTeams.length}
+                >
+                  Exportar para WhatsApp
+                </button>
               </div>
             <div className="teams-grid">
               {balancedTeams.map((team) => (

@@ -372,6 +372,17 @@ p {
   font-weight: 600;
 }
 
+.teams-export-btn {
+  margin-left: auto;
+  padding: 9px 14px;
+  font-size: 0.84rem;
+}
+
+.teams-export-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .weekly-selection {
   border-radius: 14px;
   background: #ffffff;
@@ -404,6 +415,21 @@ p {
   gap: 8px;
 }
 
+.weekly-search-input {
+  width: 100%;
+  margin-top: 10px;
+  border-radius: 10px;
+  border: 1px solid #cfd8eb;
+  padding: 9px 12px;
+  font-size: 0.9rem;
+}
+
+.weekly-search-input:focus {
+  outline: none;
+  border-color: #2e63cf;
+  box-shadow: 0 0 0 3px rgba(46, 99, 207, 0.15);
+}
+
 .weekly-players-grid {
   margin-top: 12px;
   display: grid;
@@ -431,6 +457,13 @@ p {
 
 .weekly-player-item input {
   margin: 0;
+}
+
+.weekly-empty {
+  margin: 0;
+  font-size: 0.84rem;
+  color: #6078a8;
+  font-weight: 600;
 }
 
 .teams-controls label {
@@ -1083,6 +1116,11 @@ p {
   .teams-controls {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .teams-export-btn {
+    margin-left: 0;
+    width: 100%;
   }
 
   .simple-table {
