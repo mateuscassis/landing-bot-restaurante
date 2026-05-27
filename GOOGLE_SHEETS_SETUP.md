@@ -32,6 +32,12 @@ VITE_SHEETS_API_URL=COLE_AQUI_A_URL_DO_WEB_APP
 2. No bloco de cadastro, deve aparecer `Sincronizado com Google Sheets`.
 3. Edite um jogador, atualize a pagina e confira se manteve.
 4. Abra a planilha e confira se os dados mudaram.
+5. Verifique se existe a coluna `role` com valores `linha` ou `goleiro`.
+
+## Migracao da coluna role
+- Se sua planilha foi criada antes do campo de funcao, nao precisa recriar do zero.
+- A primeira gravacao apos atualizar o Apps Script ja passa a escrever a coluna `role`.
+- Registros antigos sem funcao sao tratados como `linha` automaticamente.
 
 ## Observacao
 - Sem autenticação de usuario, qualquer pessoa com acesso ao site pode editar.

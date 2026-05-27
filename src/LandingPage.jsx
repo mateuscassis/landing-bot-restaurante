@@ -5,6 +5,12 @@ import initialPlayers from "./data/players.json";
 const groupLink = "https://wa.me/5511999999999?text=Quero%20participar%20do%20Fut%20de%20Terca";
 const STORAGE_KEY = "fut-terca-players";
 const SHEETS_API_URL = (import.meta.env.VITE_SHEETS_API_URL || "").trim();
+const DEFAULT_PLAYER_ROLE = "linha";
+const TEAM_SIZE = 4;
+
+function sanitizeRole(role) {
+  return role === "goleiro" ? "goleiro" : DEFAULT_PLAYER_ROLE;
+}
 
 function normalizePlayerName(name) {
   return name
@@ -27,6 +33,7 @@ function sanitizePlayers(players) {
       goals: Number.isFinite(player.goals) ? player.goals : 0,
       assists: Number.isFinite(player.assists) ? player.assists : 0,
       championships: Number.isFinite(player.championships) ? player.championships : 0,
+      role: sanitizeRole(player.role),
     }));
 }
 
@@ -58,6 +65,92 @@ function loadInitialPlayers() {
 
 function playersChanged(currentPlayers, incomingPlayers) {
   return JSON.stringify(currentPlayers) !== JSON.stringify(incomingPlayers);
+}
+
+function getHiddenLevelScore(player) {
+  const score = 5 + player.goals * 0.35 + player.assists * 0.25 + (player.championships || 0) * 0.8;
+  return Math.max(1, Math.min(10, score));
+}
+
+function buildBalancedTeams(players, teamsCount) {
+  const sortedPlayers = [...players].sort((a, b) => {
+    const scoreDiff = getHiddenLevelScore(b) - getHiddenLevelScore(a);
+    if (scoreDiff !== 0) {
+      return scoreDiff;
+    }
+    return b.goals + b.assists - (a.goals + a.assists);
+  });
+
+  const teams = Array.from({ length: teamsCount }, (_, index) => ({
+    id: index + 1,
+    name: `Time ${index + 1}`,
+    players: [],
+    totalHiddenScore: 0,
+  }));
+
+  const goalkeepers = sortedPlayers.filter((player) => player.role === "goleiro");
+  const linePlayers = sortedPlayers.filter((player) => player.role !== "goleiro");
+
+  function pickTeamIndex(preferIncompleteTeams = true) {
+    let candidates = teams;
+
+    if (preferIncompleteTeams) {
+      const incomplete = teams.filter((team) => team.players.length < TEAM_SIZE);
+      if (incomplete.length) {
+        candidates = incomplete;
+      }
+    }
+
+    const targetTeam = candidates.reduce((best, current) => {
+      if (best.players.length !== current.players.length) {
+        return best.players.length < current.players.length ? best : current;
+      }
+      if (best.totalHiddenScore !== current.totalHiddenScore) {
+        return best.totalHiddenScore < current.totalHiddenScore ? best : current;
+      }
+      return best.id < current.id ? best : current;
+    });
+
+    return teams.findIndex((team) => team.id === targetTeam.id);
+  }
+
+  function pushPlayer(teamIndex, player) {
+    teams[teamIndex].players.push(player);
+    teams[teamIndex].totalHiddenScore += getHiddenLevelScore(player);
+  }
+
+  // Prefer one goalkeeper per team before filling remaining spots.
+  goalkeepers.forEach((goalkeeper, goalkeeperIndex) => {
+    const teamIndex =
+      goalkeeperIndex < teamsCount ? goalkeeperIndex : pickTeamIndex(false);
+    pushPlayer(teamIndex, goalkeeper);
+  });
+
+  let teamIndex = 0;
+  let direction = 1;
+
+  linePlayers.forEach((player) => {
+    const currentTeamIsFull = teams[teamIndex].players.length >= TEAM_SIZE;
+    if (currentTeamIsFull) {
+      teamIndex = pickTeamIndex();
+    }
+
+    pushPlayer(teamIndex, player);
+
+    if (direction === 1) {
+      if (teamIndex === teams.length - 1) {
+        direction = -1;
+      } else {
+        teamIndex += 1;
+      }
+    } else if (teamIndex === 0) {
+      direction = 1;
+    } else {
+      teamIndex -= 1;
+    }
+  });
+
+  return teams;
 }
 
 async function fetchPlayersFromSheets(apiUrl) {
@@ -95,13 +188,27 @@ export default function LandingPage() {
   const [scrolled, setScrolled] = useState(false);
   const [isInitialSyncDone, setIsInitialSyncDone] = useState(!SHEETS_API_URL);
   const [isMutating, setIsMutating] = useState(false);
-  const [formData, setFormData] = useState({ name: "", goals: "", assists: "", championships: "" });
+  const [formData, setFormData] = useState({
+    name: "",
+    goals: "",
+    assists: "",
+    championships: "",
+    role: DEFAULT_PLAYER_ROLE,
+  });
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState("name");
   const [sortDirection, setSortDirection] = useState("asc");
+  const [teamsCount, setTeamsCount] = useState(2);
+  const [balancedTeams, setBalancedTeams] = useState([]);
   const [syncStatus, setSyncStatus] = useState(SHEETS_API_URL ? "syncing" : "local");
   const [editingPlayerId, setEditingPlayerId] = useState(null);
-  const [editDraft, setEditDraft] = useState({ name: "", goals: "0", assists: "0", championships: "0" });
+  const [editDraft, setEditDraft] = useState({
+    name: "",
+    goals: "0",
+    assists: "0",
+    championships: "0",
+    role: DEFAULT_PLAYER_ROLE,
+  });
   const hasHydratedRemoteRef = useRef(false);
   const lastLocalMutationRef = useRef(0);
   const nextPlayerId = useRef(Math.max(...initialState.map((player) => player.id), 0) + 1);
@@ -221,6 +328,7 @@ export default function LandingPage() {
         goals: player.goals,
         assists: player.assists,
         championships: player.championships || 0,
+        role: sanitizeRole(player.role),
       });
     });
     return Array.from(grouped.values());
@@ -290,12 +398,17 @@ export default function LandingPage() {
     return sortDirection === "asc" ? sorted : sorted.reverse();
   }, [filteredPlayers, sortBy, sortDirection]);
 
+  useEffect(() => {
+    setBalancedTeams(buildBalancedTeams(consolidatedPlayers, teamsCount));
+  }, [consolidatedPlayers, teamsCount]);
+
   function handleAddPlayer(event) {
     event.preventDefault();
     const name = formData.name.trim();
     const goals = Number.parseInt(formData.goals || "0", 10);
     const assists = Number.parseInt(formData.assists || "0", 10);
     const championships = Number.parseInt(formData.championships || "0", 10);
+    const role = sanitizeRole(formData.role);
     if (!name) {
       return;
     }
@@ -315,6 +428,7 @@ export default function LandingPage() {
               goals: player.goals + safeGoals,
               assists: player.assists + safeAssists,
               championships: (player.championships || 0) + safeChampionships,
+              role,
             }
           : player
       );
@@ -326,6 +440,7 @@ export default function LandingPage() {
           goals: safeGoals,
           assists: safeAssists,
           championships: safeChampionships,
+          role,
         },
         ...players,
       ];
@@ -334,7 +449,7 @@ export default function LandingPage() {
     setPlayers(nextPlayers);
 
     syncPlayersNow(nextPlayers);
-    setFormData({ name: "", goals: "", assists: "", championships: "" });
+    setFormData({ name: "", goals: "", assists: "", championships: "", role: DEFAULT_PLAYER_ROLE });
   }
 
   function startEdit(player) {
@@ -344,12 +459,19 @@ export default function LandingPage() {
       goals: String(player.goals),
       assists: String(player.assists),
       championships: String(player.championships || 0),
+      role: sanitizeRole(player.role),
     });
   }
 
   function cancelEdit() {
     setEditingPlayerId(null);
-    setEditDraft({ name: "", goals: "0", assists: "0", championships: "0" });
+    setEditDraft({
+      name: "",
+      goals: "0",
+      assists: "0",
+      championships: "0",
+      role: DEFAULT_PLAYER_ROLE,
+    });
   }
 
   function saveEdit(playerId) {
@@ -357,6 +479,7 @@ export default function LandingPage() {
     const goals = Number.parseInt(editDraft.goals || "0", 10);
     const assists = Number.parseInt(editDraft.assists || "0", 10);
     const championships = Number.parseInt(editDraft.championships || "0", 10);
+    const role = sanitizeRole(editDraft.role);
 
     const nextPlayers = players.map((player) =>
       player.id === playerId
@@ -366,6 +489,7 @@ export default function LandingPage() {
             goals: Number.isNaN(goals) || goals < 0 ? 0 : goals,
             assists: Number.isNaN(assists) || assists < 0 ? 0 : assists,
             championships: Number.isNaN(championships) || championships < 0 ? 0 : championships,
+            role,
           }
         : player
     );
@@ -430,6 +554,7 @@ export default function LandingPage() {
               ["artilharia", "Artilharia"],
               ["assistencias", "Assistencias"],
               ["campeoes", "Campeoes"],
+              ["times", "Times"],
               ["cadastro", "Cadastro"],
             ].map(([id, label]) => (
               <button key={id} onClick={() => scrollTo(id)} className="nav-link-btn">
@@ -545,6 +670,49 @@ export default function LandingPage() {
         </div>
       </section>
 
+      <section id="times" className="section-pad">
+        <div className="container">
+          <div className="section-header">
+            <p className="section-eyebrow">Times equilibrados</p>
+            <h2>Montagem automatica por nivel interno</h2>
+            <p className="sync-note">As notas sao internas e nao sao exibidas para os jogadores.</p>
+          </div>
+
+          <div className="teams-controls">
+            <label htmlFor="teams-count">Quantidade de times</label>
+            <select
+              id="teams-count"
+              value={teamsCount}
+              onChange={(event) => setTeamsCount(Number.parseInt(event.target.value, 10))}
+            >
+              <option value="2">2 times</option>
+              <option value="3">3 times</option>
+              <option value="4">4 times</option>
+            </select>
+          </div>
+
+          <div className="teams-grid">
+            {balancedTeams.map((team) => (
+              <article key={team.id} className="team-card">
+                <h3>{team.name}</h3>
+                <p className="team-meta">{team.players.length} jogadores</p>
+                <ul>
+                  {team.players.map((player) => (
+                    <li key={player.id}>
+                      <span>
+                        {player.name}
+                        {player.role === "goleiro" && <strong className="role-pill">GK</strong>}
+                      </span>
+                      <small>{player.goals}G · {player.assists}A</small>
+                    </li>
+                  ))}
+                </ul>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
       <section id="cadastro" className="section-pad">
         <div className="container">
           <div className="section-header">
@@ -598,6 +766,16 @@ export default function LandingPage() {
                   placeholder="0"
                 />
               </label>
+              <label>
+                Funcao
+                <select
+                  value={formData.role}
+                  onChange={(event) => setFormData((current) => ({ ...current, role: event.target.value }))}
+                >
+                  <option value="linha">Linha</option>
+                  <option value="goleiro">Goleiro</option>
+                </select>
+              </label>
               <button type="submit" className="btn-primary form-btn" disabled={isMutating}>
                 {isMutating ? "Salvando..." : "Salvar jogador"}
               </button>
@@ -632,6 +810,7 @@ export default function LandingPage() {
                   <thead>
                     <tr>
                       <th>Jogador</th>
+                      <th>Funcao</th>
                       <th>Gols</th>
                       <th>Assistencias</th>
                       <th>Titulos</th>
@@ -651,6 +830,20 @@ export default function LandingPage() {
                             />
                           ) : (
                             player.name
+                          )}
+                        </td>
+                        <td data-label="Funcao">
+                          {editingPlayerId === player.id ? (
+                            <select
+                              className="stat-select"
+                              value={editDraft.role}
+                              onChange={(event) => setEditDraft((current) => ({ ...current, role: event.target.value }))}
+                            >
+                              <option value="linha">Linha</option>
+                              <option value="goleiro">Goleiro</option>
+                            </select>
+                          ) : (
+                            sanitizeRole(player.role) === "goleiro" ? "Goleiro" : "Linha"
                           )}
                         </td>
                         <td data-label="Gols">
@@ -709,7 +902,7 @@ export default function LandingPage() {
                     ))}
                     {!displayedPlayers.length && (
                       <tr>
-                        <td colSpan="5">Nenhum jogador encontrado.</td>
+                        <td colSpan="6">Nenhum jogador encontrado.</td>
                       </tr>
                     )}
                   </tbody>

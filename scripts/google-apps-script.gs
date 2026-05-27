@@ -1,5 +1,9 @@
 const SHEET_NAME = "players";
 
+function normalizeRole_(role) {
+  return String(role || "").toLowerCase() === "goleiro" ? "goleiro" : "linha";
+}
+
 function doGet() {
   try {
     const players = readPlayers_();
@@ -22,25 +26,25 @@ function doPost(e) {
 
 function seedFromJson() {
   const seedPlayers = [
-    { id: 1, name: "Lolis", goals: 0, assists: 2, championships: 0 },
-    { id: 2, name: "Lisso", goals: 2, assists: 0, championships: 0 },
-    { id: 3, name: "Neithan", goals: 0, assists: 0, championships: 0 },
-    { id: 4, name: "Gab", goals: 2, assists: 0, championships: 0 },
-    { id: 5, name: "Limite", goals: 0, assists: 0, championships: 0 },
-    { id: 6, name: "Kadu", goals: 0, assists: 0, championships: 0 },
-    { id: 7, name: "Geraldo", goals: 0, assists: 0, championships: 0 },
-    { id: 8, name: "Mateus", goals: 0, assists: 0, championships: 0 },
-    { id: 9, name: "Lucas", goals: 1, assists: 1, championships: 0 },
-    { id: 10, name: "Baguete", goals: 0, assists: 0, championships: 0 },
-    { id: 11, name: "Dibre", goals: 1, assists: 0, championships: 0 },
-    { id: 12, name: "Flex", goals: 0, assists: 1, championships: 0 },
-    { id: 13, name: "Mose", goals: 0, assists: 0, championships: 0 },
-    { id: 14, name: "Farinha", goals: 1, assists: 1, championships: 0 },
-    { id: 15, name: "Mesenha", goals: 0, assists: 0, championships: 0 },
-    { id: 16, name: "Aranha", goals: 0, assists: 0, championships: 0 },
-    { id: 17, name: "Kaue", goals: 1, assists: 1, championships: 0 },
-    { id: 18, name: "Misto", goals: 0, assists: 2, championships: 0 },
-    { id: 19, name: "Medina", goals: 2, assists: 0, championships: 0 }
+    { id: 1, name: "Lolis", goals: 0, assists: 2, championships: 0, role: "linha" },
+    { id: 2, name: "Lisso", goals: 2, assists: 0, championships: 0, role: "linha" },
+    { id: 3, name: "Neithan", goals: 0, assists: 0, championships: 0, role: "linha" },
+    { id: 4, name: "Gab", goals: 2, assists: 0, championships: 0, role: "linha" },
+    { id: 5, name: "Limite", goals: 0, assists: 0, championships: 0, role: "linha" },
+    { id: 6, name: "Kadu", goals: 0, assists: 0, championships: 0, role: "linha" },
+    { id: 7, name: "Geraldo", goals: 0, assists: 0, championships: 0, role: "linha" },
+    { id: 8, name: "Mateus", goals: 0, assists: 0, championships: 0, role: "linha" },
+    { id: 9, name: "Lucas", goals: 1, assists: 1, championships: 0, role: "linha" },
+    { id: 10, name: "Baguete", goals: 0, assists: 0, championships: 0, role: "linha" },
+    { id: 11, name: "Dibre", goals: 1, assists: 0, championships: 0, role: "linha" },
+    { id: 12, name: "Flex", goals: 0, assists: 1, championships: 0, role: "linha" },
+    { id: 13, name: "Mose", goals: 0, assists: 0, championships: 0, role: "linha" },
+    { id: 14, name: "Farinha", goals: 1, assists: 1, championships: 0, role: "linha" },
+    { id: 15, name: "Mesenha", goals: 0, assists: 0, championships: 0, role: "linha" },
+    { id: 16, name: "Aranha", goals: 0, assists: 0, championships: 0, role: "linha" },
+    { id: 17, name: "Kaue", goals: 1, assists: 1, championships: 0, role: "linha" },
+    { id: 18, name: "Misto", goals: 0, assists: 2, championships: 0, role: "linha" },
+    { id: 19, name: "Medina", goals: 2, assists: 0, championships: 0, role: "linha" }
   ];
   writePlayers_(seedPlayers);
 }
@@ -52,15 +56,33 @@ function readPlayers_() {
     return [];
   }
 
+  const headers = data[0].map(function(header) {
+    return String(header || "").trim().toLowerCase();
+  });
+
+  const idIndex = headers.indexOf("id");
+  const nameIndex = headers.indexOf("name");
+  const goalsIndex = headers.indexOf("goals");
+  const assistsIndex = headers.indexOf("assists");
+  const championshipsIndex = headers.indexOf("championships");
+  const roleIndex = headers.indexOf("role");
+
+  const safeIdIndex = idIndex >= 0 ? idIndex : 0;
+  const safeNameIndex = nameIndex >= 0 ? nameIndex : 1;
+  const safeGoalsIndex = goalsIndex >= 0 ? goalsIndex : 2;
+  const safeAssistsIndex = assistsIndex >= 0 ? assistsIndex : 3;
+  const safeChampionshipsIndex = championshipsIndex >= 0 ? championshipsIndex : 4;
+
   return data.slice(1).filter(function(row) {
-    return String(row[1]).trim() !== "";
+    return String(row[safeNameIndex]).trim() !== "";
   }).map(function(row) {
     return {
-      id: Number(row[0]) || 0,
-      name: String(row[1] || ""),
-      goals: Number(row[2]) || 0,
-      assists: Number(row[3]) || 0,
-      championships: Number(row[4]) || 0,
+      id: Number(row[safeIdIndex]) || 0,
+      name: String(row[safeNameIndex] || ""),
+      goals: Number(row[safeGoalsIndex]) || 0,
+      assists: Number(row[safeAssistsIndex]) || 0,
+      championships: Number(row[safeChampionshipsIndex]) || 0,
+      role: normalizeRole_(roleIndex >= 0 ? row[roleIndex] : "linha"),
     };
   });
 }
@@ -68,7 +90,7 @@ function readPlayers_() {
 function writePlayers_(players) {
   const sheet = getSheet_();
   sheet.clearContents();
-  sheet.appendRow(["id", "name", "goals", "assists", "championships"]);
+  sheet.appendRow(["id", "name", "goals", "assists", "championships", "role"]);
 
   if (!players.length) {
     return;
@@ -81,10 +103,11 @@ function writePlayers_(players) {
       Number(player.goals) || 0,
       Number(player.assists) || 0,
       Number(player.championships) || 0,
+      normalizeRole_(player.role),
     ];
   });
 
-  sheet.getRange(2, 1, rows.length, 5).setValues(rows);
+  sheet.getRange(2, 1, rows.length, 6).setValues(rows);
 }
 
 function getSheet_() {
@@ -95,7 +118,7 @@ function getSheet_() {
   }
 
   if (sheet.getLastRow() === 0) {
-    sheet.appendRow(["id", "name", "goals", "assists", "championships"]);
+    sheet.appendRow(["id", "name", "goals", "assists", "championships", "role"]);
   }
 
   return sheet;

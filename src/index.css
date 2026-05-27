@@ -354,6 +354,94 @@ p {
   border-radius: 999px;
 }
 
+.teams-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.teams-controls label {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: #23375f;
+}
+
+.teams-controls select {
+  border: 1px solid #cfd8eb;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #1f2f52;
+  background: #ffffff;
+}
+
+.teams-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+}
+
+.team-card {
+  border-radius: 14px;
+  background: #ffffff;
+  border: 1px solid #e3e8f4;
+  box-shadow: 0 6px 18px rgba(10, 18, 38, 0.08);
+  padding: 14px;
+}
+
+.team-card h3 {
+  font-size: 1.5rem;
+}
+
+.team-meta {
+  margin: 4px 0 10px;
+  color: #6078a8;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.team-card ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.team-card li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px dashed #e3e8f4;
+  padding-bottom: 6px;
+  font-size: 0.9rem;
+}
+
+.team-card li small {
+  color: #4f638d;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.role-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 6px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 0.64rem;
+  letter-spacing: 0.5px;
+  font-weight: 800;
+  color: #0b3c7b;
+  background: #dce8ff;
+  border: 1px solid #bbd0f7;
+}
+
 .register-grid {
   display: grid;
   grid-template-columns: 1fr 1.3fr;
@@ -389,6 +477,14 @@ p {
   border: 1px solid #cfd8eb;
   padding: 10px 12px;
   font-size: 0.92rem;
+}
+
+.player-form select {
+  border-radius: 10px;
+  border: 1px solid #cfd8eb;
+  padding: 10px 12px;
+  font-size: 0.92rem;
+  background: #ffffff;
 }
 
 .player-form input:focus {
@@ -496,6 +592,15 @@ p {
   border: 1px solid #cfd8eb;
   padding: 6px 8px;
   font-size: 0.88rem;
+}
+
+.stat-select {
+  width: 100px;
+  border-radius: 8px;
+  border: 1px solid #cfd8eb;
+  padding: 6px 8px;
+  font-size: 0.84rem;
+  background: #ffffff;
 }
 
 .stat-input:focus {
@@ -813,6 +918,10 @@ p {
     grid-template-columns: repeat(2, 1fr);
   }
 
+  .teams-grid {
+    grid-template-columns: 1fr;
+  }
+
   .fixtures-grid {
     grid-template-columns: 1fr;
   }
@@ -838,6 +947,11 @@ p {
 
   .players-filters {
     flex-direction: column;
+  }
+
+  .teams-controls {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .simple-table {
@@ -898,6 +1012,10 @@ p {
 
   .stat-input {
     width: 68px;
+  }
+
+  .stat-select {
+    width: 92px;
   }
 
   .row-actions {
