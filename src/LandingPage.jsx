@@ -4,6 +4,7 @@ import initialPlayers from "./data/players.json";
 
 const groupLink = "https://wa.me/5511999999999?text=Quero%20participar%20do%20Fut%20de%20Terca";
 const STORAGE_KEY = "fut-terca-players";
+const TEAM_PAIR_HISTORY_KEY = "fut-terca-team-pair-history";
 const SHEETS_API_URL = (import.meta.env.VITE_SHEETS_API_URL || "").trim();
 const DEFAULT_PLAYER_ROLE = "linha";
 const DEFAULT_PLAYER_ATTACK = 5;
@@ -78,11 +79,65 @@ function playersChanged(currentPlayers, incomingPlayers) {
   return JSON.stringify(currentPlayers) !== JSON.stringify(incomingPlayers);
 }
 
+function loadTeamPairHistory() {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  try {
+    const stored = window.localStorage.getItem(TEAM_PAIR_HISTORY_KEY);
+    if (!stored) {
+      return {};
+    }
+
+    const parsed = JSON.parse(stored);
+    if (!parsed || typeof parsed !== "object") {
+      return {};
+    }
+
+    return Object.entries(parsed).reduce((acc, [key, value]) => {
+      const count = Number(value);
+      if (!Number.isNaN(count) && count > 0) {
+        acc[key] = count;
+      }
+      return acc;
+    }, {});
+  } catch {
+    return {};
+  }
+}
+
+function createPairKey(playerIdA, playerIdB) {
+  return playerIdA < playerIdB ? `${playerIdA}-${playerIdB}` : `${playerIdB}-${playerIdA}`;
+}
+
+function getPairRepeatCount(teamPlayers, incomingPlayer, pairHistory) {
+  return teamPlayers.reduce((acc, teamPlayer) => {
+    const pairKey = createPairKey(teamPlayer.id, incomingPlayer.id);
+    return acc + (pairHistory[pairKey] || 0);
+  }, 0);
+}
+
+function updatePairHistoryWithTeams(currentHistory, teams) {
+  const nextHistory = { ...currentHistory };
+
+  teams.forEach((team) => {
+    for (let i = 0; i < team.players.length; i += 1) {
+      for (let j = i + 1; j < team.players.length; j += 1) {
+        const pairKey = createPairKey(team.players[i].id, team.players[j].id);
+        nextHistory[pairKey] = (nextHistory[pairKey] || 0) + 1;
+      }
+    }
+  });
+
+  return nextHistory;
+}
+
 function getHiddenLevelScore(player) {
   return (sanitizeRating(player.attack, DEFAULT_PLAYER_ATTACK) + sanitizeRating(player.defense, DEFAULT_PLAYER_DEFENSE)) / 2;
 }
 
-function buildBalancedTeams(players, teamsCount, randomSeed) {
+function buildBalancedTeams(players, teamsCount, randomSeed, pairHistory = {}) {
   if (!teamsCount) {
     return [];
   }
@@ -110,24 +165,37 @@ function buildBalancedTeams(players, teamsCount, randomSeed) {
     return randomByPlayer(a) - randomByPlayer(b);
   });
 
-  let teamIndex = 0;
-  let direction = 1;
+  const targetAveragePerTeam = playersForTeams.reduce((acc, player) => acc + getHiddenLevelScore(player), 0) / teamsCount;
 
   sortedPlayers.forEach((player) => {
-    teams[teamIndex].players.push(player);
-    teams[teamIndex].totalAverage += getHiddenLevelScore(player);
+    const playerScore = getHiddenLevelScore(player);
 
-    if (direction === 1) {
-      if (teamIndex === teams.length - 1) {
-        direction = -1;
-      } else {
-        teamIndex += 1;
+    let bestTeam = null;
+    let bestCost = Number.POSITIVE_INFINITY;
+
+    teams.forEach((team) => {
+      if (team.players.length >= 4) {
+        return;
       }
-    } else if (teamIndex === 0) {
-      direction = 1;
-    } else {
-      teamIndex -= 1;
+
+      const projectedAverage = team.totalAverage + playerScore;
+      const balancePenalty = Math.abs(projectedAverage - targetAveragePerTeam);
+      const repeatPenalty = getPairRepeatCount(team.players, player, pairHistory);
+      const noise = randomByPlayer(player, team.id) * 0.25;
+      const totalCost = balancePenalty + repeatPenalty * 1.1 + noise;
+
+      if (totalCost < bestCost) {
+        bestCost = totalCost;
+        bestTeam = team;
+      }
+    });
+
+    if (!bestTeam) {
+      return;
     }
+
+    bestTeam.players.push(player);
+    bestTeam.totalAverage += playerScore;
   });
 
   return teams;
@@ -184,6 +252,7 @@ export default function LandingPage() {
   const [teamsDrawSeed, setTeamsDrawSeed] = useState(Date.now());
   const [weeklySelectedPlayerIds, setWeeklySelectedPlayerIds] = useState([]);
   const [balancedTeams, setBalancedTeams] = useState([]);
+  const [teamPairHistory, setTeamPairHistory] = useState(() => loadTeamPairHistory());
   const [syncStatus, setSyncStatus] = useState(SHEETS_API_URL ? "syncing" : "local");
   const [editingPlayerId, setEditingPlayerId] = useState(null);
   const [editDraft, setEditDraft] = useState({
@@ -216,6 +285,14 @@ export default function LandingPage() {
 
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(players));
   }, [players]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(TEAM_PAIR_HISTORY_KEY, JSON.stringify(teamPairHistory));
+  }, [teamPairHistory]);
 
   useEffect(() => {
     let cancelled = false;
@@ -432,8 +509,8 @@ export default function LandingPage() {
   );
 
   useEffect(() => {
-    setBalancedTeams(buildBalancedTeams(weeklySelectedPlayers, weeklyTeamsCount, teamsDrawSeed));
-  }, [weeklySelectedPlayers, weeklyTeamsCount, teamsDrawSeed]);
+    setBalancedTeams(buildBalancedTeams(weeklySelectedPlayers, weeklyTeamsCount, teamsDrawSeed, teamPairHistory));
+  }, [weeklySelectedPlayers, weeklyTeamsCount, teamsDrawSeed, teamPairHistory]);
 
   function toggleWeeklyPlayer(playerId) {
     setWeeklySelectedPlayerIds((current) =>
@@ -450,7 +527,14 @@ export default function LandingPage() {
   }
 
   function redrawTeams() {
+    if (balancedTeams.length) {
+      setTeamPairHistory((current) => updatePairHistoryWithTeams(current, balancedTeams));
+    }
     setTeamsDrawSeed((current) => current + 1);
+  }
+
+  function clearPairHistory() {
+    setTeamPairHistory({});
   }
 
   function exportTeamsToWhatsApp() {
@@ -906,6 +990,13 @@ export default function LandingPage() {
                   disabled={!balancedTeams.length}
                 >
                   Sortear novamente
+                </button>
+                <button
+                  type="button"
+                  className="sort-toggle"
+                  onClick={clearPairHistory}
+                >
+                  Zerar historico de parcerias
                 </button>
                 <button
                   type="button"
