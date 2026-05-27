@@ -79,7 +79,7 @@ function playersChanged(currentPlayers, incomingPlayers) {
 }
 
 function getHiddenLevelScore(player) {
-  return sanitizeRating(player.attack, DEFAULT_PLAYER_ATTACK) + sanitizeRating(player.defense, DEFAULT_PLAYER_DEFENSE);
+  return (sanitizeRating(player.attack, DEFAULT_PLAYER_ATTACK) + sanitizeRating(player.defense, DEFAULT_PLAYER_DEFENSE)) / 2;
 }
 
 function buildBalancedTeams(players, teamsCount, randomSeed) {
@@ -88,8 +88,8 @@ function buildBalancedTeams(players, teamsCount, randomSeed) {
   }
 
   const randomSalt = Number.isFinite(randomSeed) ? randomSeed : Date.now();
-  const randomByPlayer = (player) => {
-    const base = Math.sin((player.id + 1) * 97 + randomSalt * 0.001) * 10000;
+  const randomByPlayer = (player, teamId = 0) => {
+    const base = Math.sin((player.id + 1) * 97 + (teamId + 1) * 37 + randomSalt * 0.001) * 10000;
     return base - Math.floor(base);
   };
 
@@ -97,134 +97,38 @@ function buildBalancedTeams(players, teamsCount, randomSeed) {
     id: index + 1,
     name: `Time ${index + 1}`,
     players: [],
-    totalAttack: 0,
-    totalDefense: 0,
+    totalAverage: 0,
   }));
 
   const playersForTeams = players.slice(0, teamsCount * 4);
-  const totalAttack = playersForTeams.reduce(
-    (sum, player) => sum + sanitizeRating(player.attack, DEFAULT_PLAYER_ATTACK),
-    0
-  );
-  const totalDefense = playersForTeams.reduce(
-    (sum, player) => sum + sanitizeRating(player.defense, DEFAULT_PLAYER_DEFENSE),
-    0
-  );
-  const targetAttackPerTeam = teamsCount ? totalAttack / teamsCount : 0;
-  const targetDefensePerTeam = teamsCount ? totalDefense / teamsCount : 0;
-
   const sortedPlayers = [...playersForTeams].sort((a, b) => {
-    const attackA = sanitizeRating(a.attack, DEFAULT_PLAYER_ATTACK);
-    const defenseA = sanitizeRating(a.defense, DEFAULT_PLAYER_DEFENSE);
-    const attackB = sanitizeRating(b.attack, DEFAULT_PLAYER_ATTACK);
-    const defenseB = sanitizeRating(b.defense, DEFAULT_PLAYER_DEFENSE);
-
-    const impactA = Math.abs(attackA - targetAttackPerTeam) + Math.abs(defenseA - targetDefensePerTeam);
-    const impactB = Math.abs(attackB - targetAttackPerTeam) + Math.abs(defenseB - targetDefensePerTeam);
-    if (impactB !== impactA) {
-      return impactB - impactA;
-    }
-
-    const sumA = attackA + defenseA;
-    const sumB = attackB + defenseB;
-    if (sumB !== sumA) {
-      return sumB - sumA;
+    const averageDiff = getHiddenLevelScore(b) - getHiddenLevelScore(a);
+    if (averageDiff !== 0) {
+      return averageDiff;
     }
 
     return randomByPlayer(a) - randomByPlayer(b);
   });
 
-  const teamCost = (attack, defense) => {
-    const attackDiff = attack - targetAttackPerTeam;
-    const defenseDiff = defense - targetDefensePerTeam;
-    return attackDiff * attackDiff + defenseDiff * defenseDiff;
-  };
+  let teamIndex = 0;
+  let direction = 1;
 
-  const globalCost = (teamList) =>
-    teamList.reduce((sum, team) => sum + teamCost(team.totalAttack, team.totalDefense), 0);
+  sortedPlayers.forEach((player) => {
+    teams[teamIndex].players.push(player);
+    teams[teamIndex].totalAverage += getHiddenLevelScore(player);
 
-  playersForTeams.forEach((player) => {
-    const attack = sanitizeRating(player.attack, DEFAULT_PLAYER_ATTACK);
-    const defense = sanitizeRating(player.defense, DEFAULT_PLAYER_DEFENSE);
-
-    const candidates = teams
-      .map((team, index) => ({ team, index }))
-      .filter(({ team }) => team.players.length < 4)
-      .sort((a, b) => {
-        const scoreA =
-          teamCost(a.team.totalAttack + attack, a.team.totalDefense + defense) +
-          a.team.players.length * 0.05 +
-          randomByPlayer(player) * 0.03;
-        const scoreB =
-          teamCost(b.team.totalAttack + attack, b.team.totalDefense + defense) +
-          b.team.players.length * 0.05 +
-          randomByPlayer(player) * 0.03;
-
-        return scoreA - scoreB;
-      });
-
-    const selected = candidates[0]?.team;
-    if (!selected) {
-      return;
-    }
-
-    selected.players.push(player);
-    selected.totalAttack += attack;
-    selected.totalDefense += defense;
-  });
-
-  // Local optimization: swap players between teams when this reduces global attack/defense imbalance.
-  let currentCost = globalCost(teams);
-  for (let pass = 0; pass < 6; pass += 1) {
-    let improved = false;
-
-    outer: for (let teamAIndex = 0; teamAIndex < teams.length; teamAIndex += 1) {
-      for (let teamBIndex = teamAIndex + 1; teamBIndex < teams.length; teamBIndex += 1) {
-        const teamA = teams[teamAIndex];
-        const teamB = teams[teamBIndex];
-
-        for (let playerAIndex = 0; playerAIndex < teamA.players.length; playerAIndex += 1) {
-          for (let playerBIndex = 0; playerBIndex < teamB.players.length; playerBIndex += 1) {
-            const playerA = teamA.players[playerAIndex];
-            const playerB = teamB.players[playerBIndex];
-
-            const attackA = sanitizeRating(playerA.attack, DEFAULT_PLAYER_ATTACK);
-            const defenseA = sanitizeRating(playerA.defense, DEFAULT_PLAYER_DEFENSE);
-            const attackB = sanitizeRating(playerB.attack, DEFAULT_PLAYER_ATTACK);
-            const defenseB = sanitizeRating(playerB.defense, DEFAULT_PLAYER_DEFENSE);
-
-            const nextTeamAAttack = teamA.totalAttack - attackA + attackB;
-            const nextTeamADefense = teamA.totalDefense - defenseA + defenseB;
-            const nextTeamBAttack = teamB.totalAttack - attackB + attackA;
-            const nextTeamBDefense = teamB.totalDefense - defenseB + defenseA;
-
-            const nextCost =
-              currentCost -
-              teamCost(teamA.totalAttack, teamA.totalDefense) -
-              teamCost(teamB.totalAttack, teamB.totalDefense) +
-              teamCost(nextTeamAAttack, nextTeamADefense) +
-              teamCost(nextTeamBAttack, nextTeamBDefense);
-
-            if (nextCost + 0.0001 < currentCost) {
-              teamA.players[playerAIndex] = playerB;
-              teamB.players[playerBIndex] = playerA;
-              teamA.totalAttack = nextTeamAAttack;
-              teamA.totalDefense = nextTeamADefense;
-              teamB.totalAttack = nextTeamBAttack;
-              teamB.totalDefense = nextTeamBDefense;
-              currentCost = nextCost;
-              improved = true;
-              break outer;
-            }
-          }
-        }
+    if (direction === 1) {
+      if (teamIndex === teams.length - 1) {
+        direction = -1;
+      } else {
+        teamIndex += 1;
       }
+    } else if (teamIndex === 0) {
+      direction = 1;
+    } else {
+      teamIndex -= 1;
     }
-
-    if (!improved) {
-      break;
-    }
-  }
+  });
 
   return teams;
 }
@@ -546,7 +450,7 @@ export default function LandingPage() {
   }
 
   function redrawTeams() {
-    setTeamsDrawSeed(Date.now());
+    setTeamsDrawSeed((current) => current + 1);
   }
 
   function exportTeamsToWhatsApp() {
@@ -949,8 +853,8 @@ export default function LandingPage() {
         <div className="container">
           <div className="section-header">
             <p className="section-eyebrow">Times equilibrados</p>
-            <h2>Montagem automatica por ataque e defesa</h2>
-            <p className="sync-note">Os times sao equilibrados priorizando notas de ataque e defesa.</p>
+            <h2>Montagem automatica por media</h2>
+            <p className="sync-note">Os times sao equilibrados pela media entre ataque e defesa.</p>
             <p className="sync-note">Goleiros sao fixos e ficam fora dessa montagem automatica.</p>
           </div>
 
