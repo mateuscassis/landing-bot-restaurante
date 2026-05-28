@@ -713,7 +713,8 @@ p {
   border-bottom: 1px solid #e8edf5;
   padding: 10px 8px;
   font-size: 0.88rem;
-  text-align: left;
+  text-align: center;
+  vertical-align: middle;
 }
 
 .simple-table th {
