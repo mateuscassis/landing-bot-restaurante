@@ -35,7 +35,7 @@ function sanitizePlayers(players) {
     return [];
   }
 
-  return players
+  const sanitized = players
     .filter((player) => player && typeof player.name === "string")
     .map((player, index) => ({
       id: Number.isFinite(player.id) ? player.id : index + 1,
@@ -47,6 +47,46 @@ function sanitizePlayers(players) {
       defense: sanitizeRating(player.defense ?? player.weight, DEFAULT_PLAYER_DEFENSE),
       role: sanitizeRole(player.role),
     }));
+
+  const mergedByName = new Map();
+
+  sanitized.forEach((player) => {
+    const key = normalizePlayerName(player.name);
+    const existing = mergedByName.get(key);
+
+    if (!existing) {
+      mergedByName.set(key, { ...player });
+      return;
+    }
+
+    existing.goals += player.goals;
+    existing.assists += player.assists;
+    existing.championships += player.championships;
+    existing.attack = Math.max(existing.attack, player.attack);
+    existing.defense = Math.max(existing.defense, player.defense);
+    existing.role = existing.role === "goleiro" || player.role === "goleiro" ? "goleiro" : DEFAULT_PLAYER_ROLE;
+  });
+
+  const usedIds = new Set();
+  let nextGeneratedId = 1;
+
+  return Array.from(mergedByName.values()).map((player) => {
+    let safeId = Number.isFinite(player.id) ? player.id : 0;
+
+    if (!safeId || usedIds.has(safeId)) {
+      while (usedIds.has(nextGeneratedId)) {
+        nextGeneratedId += 1;
+      }
+      safeId = nextGeneratedId;
+      nextGeneratedId += 1;
+    }
+
+    usedIds.add(safeId);
+    return {
+      ...player,
+      id: safeId,
+    };
+  });
 }
 
 function loadInitialPlayers() {
@@ -507,19 +547,25 @@ export default function LandingPage() {
     if (!term) {
       return players;
     }
-    return players.filter((player) => player.name.toLowerCase().includes(term));
+    return players.filter((player) => String(player.name || "").toLowerCase().includes(term));
   }, [players, searchTerm]);
 
   const displayedPlayers = useMemo(() => {
+    const getSafeName = (player) => String(player.name || "");
+    const getSafeNumber = (value) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+
     const sorted = [...filteredPlayers].sort((a, b) => {
       if (sortBy === "name") {
-        return a.name.localeCompare(b.name, "pt-BR");
+        return getSafeName(a).localeCompare(getSafeName(b), "pt-BR");
       }
       if (sortBy === "goals") {
-        return a.goals - b.goals;
+        return getSafeNumber(a.goals) - getSafeNumber(b.goals);
       }
       if (sortBy === "assists") {
-        return a.assists - b.assists;
+        return getSafeNumber(a.assists) - getSafeNumber(b.assists);
       }
       if (sortBy === "attack") {
         return sanitizeRating(a.attack, DEFAULT_PLAYER_ATTACK) - sanitizeRating(b.attack, DEFAULT_PLAYER_ATTACK);
@@ -527,7 +573,7 @@ export default function LandingPage() {
       if (sortBy === "defense") {
         return sanitizeRating(a.defense, DEFAULT_PLAYER_DEFENSE) - sanitizeRating(b.defense, DEFAULT_PLAYER_DEFENSE);
       }
-      return (a.championships || 0) - (b.championships || 0);
+      return getSafeNumber(a.championships) - getSafeNumber(b.championships);
     });
 
     return sortDirection === "asc" ? sorted : sorted.reverse();
