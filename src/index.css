@@ -1263,6 +1263,10 @@ p {
     gap: 8px;
   }
 
+  .mobile-hidden {
+    display: none !important;
+  }
+
   .simple-table td::before {
     content: attr(data-label);
     font-size: 0.72rem;
@@ -1298,7 +1302,9 @@ p {
   }
 
   .row-btn {
-    padding: 6px 10px;
+    padding: 8px 14px;
+    font-size: 0.82rem;
+    min-height: 36px;
   }
 
   .section-pad {
@@ -1314,55 +1320,72 @@ p {
     flex-direction: column;
   }
 
-  /* Stats table: no card mode — mantém layout de linha compacto */
-  .stats-season-table,
-  .stats-season-table tbody,
-  .stats-season-table tr,
-  .stats-season-table td {
-    display: flex;
+  /* Stats table: card por jogador no mobile */
+  .stats-season-table {
+    display: block;
   }
 
-  .stats-season-table {
+  .stats-season-table thead {
+    display: none;
+  }
+
+  .stats-season-table tbody {
+    display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
   }
 
   .stats-season-table tr {
-    align-items: center;
-    flex-wrap: nowrap;
-    gap: 4px;
-    padding: 10px 8px;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: auto auto;
+    gap: 6px 4px;
+    border: 1px solid #e5e9f3;
+    border-radius: 12px;
+    padding: 10px 12px;
+    background: #fff;
+    margin-bottom: 0;
   }
 
   .stats-season-table td {
-    flex: 1;
-    padding: 0;
-    border: none;
-    font-size: 0.82rem;
-    justify-content: center;
+    display: flex;
     align-items: center;
+    justify-content: center;
+    border: none;
+    padding: 0;
+    font-size: 0.82rem;
   }
 
   .stats-season-table td.col-player {
-    flex: 1.4;
+    grid-column: 1 / -1;
     justify-content: flex-start;
-    font-weight: 600;
+    font-weight: 700;
+    font-size: 0.92rem;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #eef0f8;
   }
 
-  /* Esconde o data-label nas células de stats no mobile */
   .stats-season-table td::before {
     display: none;
   }
 
   .stats-season-table .quick-stat-cell {
-    flex-wrap: nowrap;
+    flex-direction: column;
+    align-items: center;
     gap: 4px;
-    justify-content: center;
+  }
+
+  .stats-season-table .quick-stat-value {
+    font-size: 1rem;
+    font-weight: 700;
   }
 
   .stats-season-table .quick-stat-btn {
-    padding: 5px 7px;
-    font-size: 0.72rem;
+    padding: 6px 12px;
+    font-size: 0.78rem;
+    min-height: 34px;
+    width: 100%;
+    justify-content: center;
   }
 
   .stats-table-controls {
@@ -1371,5 +1394,6 @@ p {
 
   .stats-table-controls .search-input {
     width: 100%;
+    margin-bottom: 0;
   }
 }

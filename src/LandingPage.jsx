@@ -1370,36 +1370,6 @@ export default function LandingPage() {
                 />
               </label>
               <label>
-                Gols
-                <input
-                  type="number"
-                  min="0"
-                  value={formData.goals}
-                  onChange={(event) => setFormData((current) => ({ ...current, goals: event.target.value }))}
-                  placeholder="0"
-                />
-              </label>
-              <label>
-                Assistencias
-                <input
-                  type="number"
-                  min="0"
-                  value={formData.assists}
-                  onChange={(event) => setFormData((current) => ({ ...current, assists: event.target.value }))}
-                  placeholder="0"
-                />
-              </label>
-              <label>
-                Titulos de campeao
-                <input
-                  type="number"
-                  min="0"
-                  value={formData.championships}
-                  onChange={(event) => setFormData((current) => ({ ...current, championships: event.target.value }))}
-                  placeholder="0"
-                />
-              </label>
-              <label>
                 Velocidade
                 <select
                   value={formData.speed}
@@ -1524,11 +1494,11 @@ export default function LandingPage() {
                       <th>Jogador</th>
                       <th>Funcao</th>
                       <th>Posicao</th>
-                      <th>Vel</th>
-                      <th>Fin</th>
-                      <th>Defesa</th>
-                      <th>Chute</th>
-                      <th>Passe</th>
+                      <th className="mobile-hidden">Vel</th>
+                      <th className="mobile-hidden">Fin</th>
+                      <th className="mobile-hidden">Defesa</th>
+                      <th className="mobile-hidden">Chute</th>
+                      <th className="mobile-hidden">Passe</th>
                       <th>OVR</th>
                       <th>Acoes</th>
                     </tr>
@@ -1607,7 +1577,7 @@ export default function LandingPage() {
                             sanitizeLinePosition(player.linePosition)
                           )}
                         </td>
-                        <td data-label="Vel">
+                        <td data-label="Vel" className="mobile-hidden">
                           {isBulkEditing ? (
                             <select
                               className="stat-select"
@@ -1632,7 +1602,7 @@ export default function LandingPage() {
                             sanitizeRating(player.speed, DEFAULT_PLAYER_SPEED)
                           )}
                         </td>
-                        <td data-label="Fin">
+                        <td data-label="Fin" className="mobile-hidden">
                           {isBulkEditing ? (
                             <select
                               className="stat-select"
@@ -1657,7 +1627,7 @@ export default function LandingPage() {
                             sanitizeRating(player.finishing, DEFAULT_PLAYER_FINISHING)
                           )}
                         </td>
-                        <td data-label="Defesa">
+                        <td data-label="Defesa" className="mobile-hidden">
                           {isBulkEditing ? (
                             <select
                               className="stat-select"
@@ -1682,7 +1652,7 @@ export default function LandingPage() {
                             sanitizeRating(player.defense, DEFAULT_PLAYER_DEFENSE)
                           )}
                         </td>
-                        <td data-label="Chute">
+                        <td data-label="Chute" className="mobile-hidden">
                           {isBulkEditing ? (
                             <select
                               className="stat-select"
@@ -1707,7 +1677,7 @@ export default function LandingPage() {
                             sanitizeRating(player.shooting, DEFAULT_PLAYER_SHOOTING)
                           )}
                         </td>
-                        <td data-label="Passe">
+                        <td data-label="Passe" className="mobile-hidden">
                           {isBulkEditing ? (
                             <select
                               className="stat-select"
