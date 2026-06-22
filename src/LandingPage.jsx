@@ -212,10 +212,24 @@ function getHiddenLevelScore(player) {
   const speed = sanitizeRating(player.speed, DEFAULT_PLAYER_SPEED);
   const finishing = sanitizeRating(player.finishing, DEFAULT_PLAYER_FINISHING);
   const defense = sanitizeRating(player.defense, DEFAULT_PLAYER_DEFENSE);
-  const shooting = sanitizeRating(player.shooting, DEFAULT_PLAYER_SHOOTING);
   const passing = sanitizeRating(player.passing, DEFAULT_PLAYER_PASSING);
 
-  return (speed + finishing + defense + shooting + passing) / 5;
+  return (speed + finishing + defense + passing) / 4;
+}
+
+function displayOVR(player) {
+  return Math.min(99, Math.round(getHiddenLevelScore(player) * 10));
+}
+
+function displayStat(value, fallback = 5) {
+  return Math.min(99, Math.round(sanitizeRating(value, fallback) * 10));
+}
+
+function getCardTier(player) {
+  const ovr = displayOVR(player);
+  if (ovr >= 75) return "gold";
+  if (ovr >= 51) return "silver";
+  return "bronze";
 }
 
 function isGoalkeeper(player) {
@@ -658,20 +672,19 @@ export default function LandingPage() {
   }, [consolidatedPlayers, totalAssists, totalGoals]);
 
   const topScorers = useMemo(
-    () => [...consolidatedPlayers].sort((a, b) => b.goals - a.goals || b.assists - a.assists).slice(0, 5),
+    () => [...consolidatedPlayers].sort((a, b) => b.goals - a.goals || b.assists - a.assists),
     [consolidatedPlayers]
   );
 
   const topAssists = useMemo(
-    () => [...consolidatedPlayers].sort((a, b) => b.assists - a.assists || b.goals - a.goals).slice(0, 5),
+    () => [...consolidatedPlayers].sort((a, b) => b.assists - a.assists || b.goals - a.goals),
     [consolidatedPlayers]
   );
 
   const topChampions = useMemo(
     () =>
       [...consolidatedPlayers]
-        .sort((a, b) => b.championships - a.championships || b.goals - a.goals || b.assists - a.assists)
-        .slice(0, 5),
+        .sort((a, b) => b.championships - a.championships || b.goals - a.goals || b.assists - a.assists),
     [consolidatedPlayers]
   );
 
@@ -1171,19 +1184,39 @@ export default function LandingPage() {
             <p className="section-eyebrow">Artilharia</p>
             <h2>Top goleadores</h2>
           </div>
-          <div className="ranking-grid">
-            {topScorers.map((player, index) => (
-              <article className={`ranking-card${index === 0 ? " top" : ""}`} key={player.name}>
-                <div className="ranking-head">
-                  <span className="badge-pos">#{index + 1}</span>
-                  <Star size={18} />
+          <div className="fifa-cards-grid">
+            {topScorers.map((player, index) => {
+              const tier = getCardTier(player);
+              const pos = sanitizeRole(player.role) === "goleiro" ? "GOL" : sanitizeLinePosition(player.linePosition).slice(0,3).toUpperCase();
+              return (
+                <div className="fifa-card-wrapper" key={player.name}>
+                  <div className={`fifa-card fifa-card--${tier}`}>
+                    <div className="fifa-card__top">
+                      <div className="fifa-card__ovr-block">
+                        <span className="fifa-card__ovr">{displayOVR(player)}</span>
+                        <span className="fifa-card__pos">{pos}</span>
+                      </div>
+                      <div className="fifa-card__rank-badge">#{index + 1}</div>
+                    </div>
+                    <div className="fifa-card__avatar">
+                      <span className="fifa-card__initials">{player.name.slice(0,2).toUpperCase()}</span>
+                    </div>
+                    <div className="fifa-card__name">{player.name}</div>
+                    <div className="fifa-card__stats">
+                      <div className="fifa-card__stat"><span className="fifa-card__stat-val">{displayStat(player.speed, DEFAULT_PLAYER_SPEED)}</span><span className="fifa-card__stat-key">VEL</span></div>
+                      <div className="fifa-card__stat"><span className="fifa-card__stat-val">{displayStat(player.passing, DEFAULT_PLAYER_PASSING)}</span><span className="fifa-card__stat-key">PAS</span></div>
+                      <div className="fifa-card__stat"><span className="fifa-card__stat-val">{displayStat(player.finishing, DEFAULT_PLAYER_FINISHING)}</span><span className="fifa-card__stat-key">FIN</span></div>
+                      <div className="fifa-card__stat"><span className="fifa-card__stat-val">{displayStat(player.defense, DEFAULT_PLAYER_DEFENSE)}</span><span className="fifa-card__stat-key">DEF</span></div>
+                    </div>
+                  </div>
+                  <div className="fifa-stat-badge fifa-stat-badge--goals">
+                    <span className="fifa-stat-badge__icon">⚽</span>
+                    <span className="fifa-stat-badge__value">{player.goals}</span>
+                    <span className="fifa-stat-badge__label">gols</span>
+                  </div>
                 </div>
-                <h3 className="ranking-name">{player.name}</h3>
-                {renderTrophies(player.championships)}
-                <div className="ranking-value">{player.goals} gols</div>
-                <small>{player.assists} assistencias</small>
-              </article>
-            ))}
+              );
+            })}
           </div>
         </div>
       </section>
@@ -1194,19 +1227,39 @@ export default function LandingPage() {
             <p className="section-eyebrow">Assistencias</p>
             <h2>Lideres de assistencia</h2>
           </div>
-          <div className="ranking-grid">
-            {topAssists.map((player, index) => (
-              <article className={`ranking-card${index === 0 ? " top" : ""}`} key={player.name}>
-                <div className="ranking-head">
-                  <span className="badge-pos">#{index + 1}</span>
-                  <TrendingUp size={18} />
+          <div className="fifa-cards-grid">
+            {topAssists.map((player, index) => {
+              const tier = getCardTier(player);
+              const pos = sanitizeRole(player.role) === "goleiro" ? "GOL" : sanitizeLinePosition(player.linePosition).slice(0,3).toUpperCase();
+              return (
+                <div className="fifa-card-wrapper" key={player.name}>
+                  <div className={`fifa-card fifa-card--${tier}`}>
+                    <div className="fifa-card__top">
+                      <div className="fifa-card__ovr-block">
+                        <span className="fifa-card__ovr">{displayOVR(player)}</span>
+                        <span className="fifa-card__pos">{pos}</span>
+                      </div>
+                      <div className="fifa-card__rank-badge">#{index + 1}</div>
+                    </div>
+                    <div className="fifa-card__avatar">
+                      <span className="fifa-card__initials">{player.name.slice(0,2).toUpperCase()}</span>
+                    </div>
+                    <div className="fifa-card__name">{player.name}</div>
+                    <div className="fifa-card__stats">
+                      <div className="fifa-card__stat"><span className="fifa-card__stat-val">{displayStat(player.speed, DEFAULT_PLAYER_SPEED)}</span><span className="fifa-card__stat-key">VEL</span></div>
+                      <div className="fifa-card__stat"><span className="fifa-card__stat-val">{displayStat(player.passing, DEFAULT_PLAYER_PASSING)}</span><span className="fifa-card__stat-key">PAS</span></div>
+                      <div className="fifa-card__stat"><span className="fifa-card__stat-val">{displayStat(player.finishing, DEFAULT_PLAYER_FINISHING)}</span><span className="fifa-card__stat-key">FIN</span></div>
+                      <div className="fifa-card__stat"><span className="fifa-card__stat-val">{displayStat(player.defense, DEFAULT_PLAYER_DEFENSE)}</span><span className="fifa-card__stat-key">DEF</span></div>
+                    </div>
+                  </div>
+                  <div className="fifa-stat-badge fifa-stat-badge--assists">
+                    <span className="fifa-stat-badge__icon">🅰️</span>
+                    <span className="fifa-stat-badge__value">{player.assists}</span>
+                    <span className="fifa-stat-badge__label">assist.</span>
+                  </div>
                 </div>
-                <h3 className="ranking-name">{player.name}</h3>
-                {renderTrophies(player.championships)}
-                <div className="ranking-value">{player.assists} assistencias</div>
-                <small>{player.goals} gols</small>
-              </article>
-            ))}
+              );
+            })}
           </div>
         </div>
       </section>
@@ -1217,19 +1270,39 @@ export default function LandingPage() {
             <p className="section-eyebrow">Campeoes</p>
             <h2>Ranking de campeoes</h2>
           </div>
-          <div className="ranking-grid">
-            {topChampions.map((player, index) => (
-              <article className={`ranking-card${index === 0 ? " top" : ""}`} key={player.name}>
-                <div className="ranking-head">
-                  <span className="badge-pos">#{index + 1}</span>
-                  <Trophy size={18} />
+          <div className="fifa-cards-grid">
+            {topChampions.map((player, index) => {
+              const tier = getCardTier(player);
+              const pos = sanitizeRole(player.role) === "goleiro" ? "GOL" : sanitizeLinePosition(player.linePosition).slice(0,3).toUpperCase();
+              return (
+                <div className="fifa-card-wrapper" key={player.name}>
+                  <div className={`fifa-card fifa-card--${tier}`}>
+                    <div className="fifa-card__top">
+                      <div className="fifa-card__ovr-block">
+                        <span className="fifa-card__ovr">{displayOVR(player)}</span>
+                        <span className="fifa-card__pos">{pos}</span>
+                      </div>
+                      <div className="fifa-card__rank-badge">#{index + 1}</div>
+                    </div>
+                    <div className="fifa-card__avatar">
+                      <span className="fifa-card__initials">{player.name.slice(0,2).toUpperCase()}</span>
+                    </div>
+                    <div className="fifa-card__name">{player.name}</div>
+                    <div className="fifa-card__stats">
+                      <div className="fifa-card__stat"><span className="fifa-card__stat-val">{displayStat(player.speed, DEFAULT_PLAYER_SPEED)}</span><span className="fifa-card__stat-key">VEL</span></div>
+                      <div className="fifa-card__stat"><span className="fifa-card__stat-val">{displayStat(player.passing, DEFAULT_PLAYER_PASSING)}</span><span className="fifa-card__stat-key">PAS</span></div>
+                      <div className="fifa-card__stat"><span className="fifa-card__stat-val">{displayStat(player.finishing, DEFAULT_PLAYER_FINISHING)}</span><span className="fifa-card__stat-key">FIN</span></div>
+                      <div className="fifa-card__stat"><span className="fifa-card__stat-val">{displayStat(player.defense, DEFAULT_PLAYER_DEFENSE)}</span><span className="fifa-card__stat-key">DEF</span></div>
+                    </div>
+                  </div>
+                  <div className="fifa-stat-badge fifa-stat-badge--champ">
+                    <span className="fifa-stat-badge__icon">🏆</span>
+                    <span className="fifa-stat-badge__value">{player.championships}</span>
+                    <span className="fifa-stat-badge__label">títulos</span>
+                  </div>
                 </div>
-                <h3 className="ranking-name">{player.name}</h3>
-                {renderTrophies(player.championships)}
-                <div className="ranking-value">{player.championships} titulos</div>
-                <small>{player.goals} gols · {player.assists} assistencias</small>
-              </article>
-            ))}
+              );
+            })}
           </div>
         </div>
       </section>
@@ -1263,14 +1336,16 @@ export default function LandingPage() {
             <div className="weekly-players-grid">
               {filteredWeeklyAvailablePlayers.map((player) => {
                 const checked = weeklySelectedPlayerIds.includes(player.id);
+                const tier = getCardTier(player);
                 return (
-                  <label key={player.id} className={`weekly-player-item${checked ? " checked" : ""}`}>
+                  <label key={player.id} className={`weekly-player-item weekly-player-item--${tier}${checked ? " checked" : ""}`}>
                     <input
                       type="checkbox"
                       checked={checked}
                       onChange={() => toggleWeeklyPlayer(player.id)}
                     />
-                    <span>{player.name}</span>
+                    <span className="weekly-player-item__name">{player.name}</span>
+                    <span className="weekly-player-item__ovr">{displayOVR(player)}</span>
                   </label>
                 );
               })}
@@ -1318,7 +1393,7 @@ export default function LandingPage() {
                     {team.players.map((player) => (
                       <li key={player.id}>
                         <span>{player.name}</span>
-                        <small>{sanitizeRole(player.role) === "goleiro" ? "Goleiro" : sanitizeLinePosition(player.linePosition)} · OVR {getHiddenLevelScore(player).toFixed(1)}</small>
+                        <small>{sanitizeRole(player.role) === "goleiro" ? "Goleiro" : sanitizeLinePosition(player.linePosition)} · OVR {displayOVR(player)}</small>
                       </li>
                     ))}
                   </ul>
@@ -1333,7 +1408,7 @@ export default function LandingPage() {
                     {weeklyReservePlayers.map((player) => (
                       <li key={player.id}>
                         <span>{player.name}</span>
-                        <small>{sanitizeRole(player.role) === "goleiro" ? "Goleiro" : sanitizeLinePosition(player.linePosition)} · OVR {getHiddenLevelScore(player).toFixed(1)}</small>
+                        <small>{sanitizeRole(player.role) === "goleiro" ? "Goleiro" : sanitizeLinePosition(player.linePosition)} · OVR {displayOVR(player)}</small>
                       </li>
                     ))}
                   </ul>
@@ -1403,17 +1478,6 @@ export default function LandingPage() {
                 </select>
               </label>
               <label>
-                Chute
-                <select
-                  value={formData.shooting}
-                  onChange={(event) => setFormData((current) => ({ ...current, shooting: event.target.value }))}
-                >
-                  {RATING_OPTIONS.map((value) => (
-                    <option key={value} value={String(value)}>{value}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
                 Passe
                 <select
                   value={formData.passing}
@@ -1466,7 +1530,6 @@ export default function LandingPage() {
                   <option value="speed">Velocidade</option>
                   <option value="finishing">Finalizacao</option>
                   <option value="defense">Defesa</option>
-                  <option value="shooting">Chute</option>
                   <option value="passing">Passe</option>
                 </select>
                 <button
@@ -1497,7 +1560,6 @@ export default function LandingPage() {
                       <th className="mobile-hidden">Vel</th>
                       <th className="mobile-hidden">Fin</th>
                       <th className="mobile-hidden">Defesa</th>
-                      <th className="mobile-hidden">Chute</th>
                       <th className="mobile-hidden">Passe</th>
                       <th>OVR</th>
                       <th>Acoes</th>
@@ -1652,31 +1714,6 @@ export default function LandingPage() {
                             sanitizeRating(player.defense, DEFAULT_PLAYER_DEFENSE)
                           )}
                         </td>
-                        <td data-label="Chute" className="mobile-hidden">
-                          {isBulkEditing ? (
-                            <select
-                              className="stat-select"
-                              value={bulkDrafts[player.id]?.shooting || String(DEFAULT_PLAYER_SHOOTING)}
-                              onChange={(event) => updateBulkDraftField(player.id, "shooting", event.target.value)}
-                            >
-                              {RATING_OPTIONS.map((value) => (
-                                <option key={value} value={String(value)}>{value}</option>
-                              ))}
-                            </select>
-                          ) : editingPlayerId === player.id ? (
-                            <select
-                              className="stat-select"
-                              value={editDraft.shooting}
-                              onChange={(event) => setEditDraft((current) => ({ ...current, shooting: event.target.value }))}
-                            >
-                              {RATING_OPTIONS.map((value) => (
-                                <option key={value} value={String(value)}>{value}</option>
-                              ))}
-                            </select>
-                          ) : (
-                            sanitizeRating(player.shooting, DEFAULT_PLAYER_SHOOTING)
-                          )}
-                        </td>
                         <td data-label="Passe" className="mobile-hidden">
                           {isBulkEditing ? (
                             <select
@@ -1702,7 +1739,7 @@ export default function LandingPage() {
                             sanitizeRating(player.passing, DEFAULT_PLAYER_PASSING)
                           )}
                         </td>
-                        <td data-label="OVR">{getHiddenLevelScore(player).toFixed(1)}</td>
+                        <td data-label="OVR">{displayOVR(player)}</td>
                         <td data-label="Acoes">
                           {isBulkEditing ? (
                             <span className="sync-note">Edicao em massa</span>
@@ -1722,7 +1759,7 @@ export default function LandingPage() {
                     ))}
                     {!displayedPlayers.length && (
                       <tr>
-                        <td colSpan="10">Nenhum jogador encontrado.</td>
+                        <td colSpan="9">Nenhum jogador encontrado.</td>
                       </tr>
                     )}
                   </tbody>
