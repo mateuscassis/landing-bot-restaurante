@@ -20,6 +20,14 @@ function normalizeRating_(value, fallback) {
   return Math.max(1, Math.min(10, parsed));
 }
 
+function normalizeLinePosition_(position) {
+  var normalized = String(position || "").toLowerCase();
+  if (normalized === "defesa" || normalized === "meio" || normalized === "ataque") {
+    return normalized;
+  }
+  return "meio";
+}
+
 function doGet() {
   try {
     const players = readPlayers_();
@@ -42,25 +50,25 @@ function doPost(e) {
 
 function seedFromJson() {
   const seedPlayers = [
-    { id: 1, name: "Lolis", goals: 0, assists: 2, championships: 0, attack: 5, defense: 5, role: "linha" },
-    { id: 2, name: "Lisso", goals: 2, assists: 0, championships: 0, attack: 5, defense: 5, role: "linha" },
-    { id: 3, name: "Neithan", goals: 0, assists: 0, championships: 0, attack: 5, defense: 5, role: "linha" },
-    { id: 4, name: "Gab", goals: 2, assists: 0, championships: 0, attack: 5, defense: 5, role: "linha" },
-    { id: 5, name: "Limite", goals: 0, assists: 0, championships: 0, attack: 5, defense: 5, role: "linha" },
-    { id: 6, name: "Kadu", goals: 0, assists: 0, championships: 0, attack: 5, defense: 5, role: "linha" },
-    { id: 7, name: "Geraldo", goals: 0, assists: 0, championships: 0, attack: 5, defense: 5, role: "linha" },
-    { id: 8, name: "Mateus", goals: 0, assists: 0, championships: 0, attack: 5, defense: 5, role: "linha" },
-    { id: 9, name: "Lucas", goals: 1, assists: 1, championships: 0, attack: 5, defense: 5, role: "linha" },
-    { id: 10, name: "Baguete", goals: 0, assists: 0, championships: 0, attack: 5, defense: 5, role: "linha" },
-    { id: 11, name: "Dibre", goals: 2, assists: 0, championships: 0, attack: 5, defense: 5, role: "linha" },
-    { id: 12, name: "Flex", goals: 0, assists: 1, championships: 0, attack: 5, defense: 5, role: "linha" },
-    { id: 13, name: "Mose", goals: 0, assists: 0, championships: 0, attack: 5, defense: 5, role: "linha" },
-    { id: 14, name: "Farinha", goals: 1, assists: 1, championships: 0, attack: 5, defense: 5, role: "linha" },
-    { id: 15, name: "Mesenha", goals: 0, assists: 0, championships: 0, attack: 5, defense: 5, role: "linha" },
-    { id: 16, name: "Aranha", goals: 0, assists: 0, championships: 0, attack: 5, defense: 5, role: "linha" },
-    { id: 17, name: "Kaue", goals: 1, assists: 1, championships: 0, attack: 5, defense: 5, role: "linha" },
-    { id: 18, name: "Misto", goals: 1, assists: 2, championships: 0, attack: 5, defense: 5, role: "linha" },
-    { id: 19, name: "Medina", goals: 2, assists: 0, championships: 0, attack: 5, defense: 5, role: "linha" }
+    { id: 1, name: "Lolis", goals: 0, assists: 2, championships: 0, speed: 5, finishing: 5, defense: 5, shooting: 5, passing: 5, linePosition: "meio", role: "linha" },
+    { id: 2, name: "Lisso", goals: 2, assists: 0, championships: 0, speed: 5, finishing: 5, defense: 5, shooting: 5, passing: 5, linePosition: "meio", role: "linha" },
+    { id: 3, name: "Neithan", goals: 0, assists: 0, championships: 0, speed: 5, finishing: 5, defense: 5, shooting: 5, passing: 5, linePosition: "meio", role: "linha" },
+    { id: 4, name: "Gab", goals: 2, assists: 0, championships: 0, speed: 5, finishing: 5, defense: 5, shooting: 5, passing: 5, linePosition: "meio", role: "linha" },
+    { id: 5, name: "Limite", goals: 0, assists: 0, championships: 0, speed: 5, finishing: 5, defense: 5, shooting: 5, passing: 5, linePosition: "meio", role: "linha" },
+    { id: 6, name: "Kadu", goals: 0, assists: 0, championships: 0, speed: 5, finishing: 5, defense: 5, shooting: 5, passing: 5, linePosition: "meio", role: "linha" },
+    { id: 7, name: "Geraldo", goals: 0, assists: 0, championships: 0, speed: 5, finishing: 5, defense: 5, shooting: 5, passing: 5, linePosition: "meio", role: "linha" },
+    { id: 8, name: "Mateus", goals: 0, assists: 0, championships: 0, speed: 5, finishing: 5, defense: 5, shooting: 5, passing: 5, linePosition: "meio", role: "linha" },
+    { id: 9, name: "Lucas", goals: 1, assists: 1, championships: 0, speed: 5, finishing: 5, defense: 5, shooting: 5, passing: 5, linePosition: "meio", role: "linha" },
+    { id: 10, name: "Baguete", goals: 0, assists: 0, championships: 0, speed: 5, finishing: 5, defense: 5, shooting: 5, passing: 5, linePosition: "meio", role: "linha" },
+    { id: 11, name: "Dibre", goals: 2, assists: 0, championships: 0, speed: 5, finishing: 5, defense: 5, shooting: 5, passing: 5, linePosition: "meio", role: "linha" },
+    { id: 12, name: "Flex", goals: 0, assists: 1, championships: 0, speed: 5, finishing: 5, defense: 5, shooting: 5, passing: 5, linePosition: "meio", role: "linha" },
+    { id: 13, name: "Mose", goals: 0, assists: 0, championships: 0, speed: 5, finishing: 5, defense: 5, shooting: 5, passing: 5, linePosition: "meio", role: "linha" },
+    { id: 14, name: "Farinha", goals: 1, assists: 1, championships: 0, speed: 5, finishing: 5, defense: 5, shooting: 5, passing: 5, linePosition: "meio", role: "linha" },
+    { id: 15, name: "Mesenha", goals: 0, assists: 0, championships: 0, speed: 5, finishing: 5, defense: 5, shooting: 5, passing: 5, linePosition: "meio", role: "linha" },
+    { id: 16, name: "Aranha", goals: 0, assists: 0, championships: 0, speed: 5, finishing: 5, defense: 5, shooting: 5, passing: 5, linePosition: "meio", role: "linha" },
+    { id: 17, name: "Kaue", goals: 1, assists: 1, championships: 0, speed: 5, finishing: 5, defense: 5, shooting: 5, passing: 5, linePosition: "meio", role: "linha" },
+    { id: 18, name: "Misto", goals: 1, assists: 2, championships: 0, speed: 5, finishing: 5, defense: 5, shooting: 5, passing: 5, linePosition: "meio", role: "linha" },
+    { id: 19, name: "Medina", goals: 2, assists: 0, championships: 0, speed: 5, finishing: 5, defense: 5, shooting: 5, passing: 5, linePosition: "meio", role: "linha" }
   ];
   writePlayers_(seedPlayers);
 }
@@ -81,8 +89,14 @@ function readPlayers_() {
   const goalsIndex = headers.indexOf("goals");
   const assistsIndex = headers.indexOf("assists");
   const championshipsIndex = headers.indexOf("championships");
+  const speedIndex = headers.indexOf("speed");
+  const finishingIndex = headers.indexOf("finishing");
   const attackIndex = headers.indexOf("attack");
   const defenseIndex = headers.indexOf("defense");
+  const shootingIndex = headers.indexOf("shooting");
+  const passingIndex = headers.indexOf("passing");
+  const linePositionIndex = headers.indexOf("lineposition");
+  const positionIndex = headers.indexOf("position");
   const weightIndex = headers.indexOf("weight");
   const roleIndex = headers.indexOf("role");
 
@@ -91,22 +105,33 @@ function readPlayers_() {
   const safeGoalsIndex = goalsIndex >= 0 ? goalsIndex : 2;
   const safeAssistsIndex = assistsIndex >= 0 ? assistsIndex : 3;
   const safeChampionshipsIndex = championshipsIndex >= 0 ? championshipsIndex : 4;
+  const safeSpeedIndex = speedIndex >= 0 ? speedIndex : -1;
+  const safeFinishingIndex = finishingIndex >= 0 ? finishingIndex : -1;
   const safeAttackIndex = attackIndex >= 0 ? attackIndex : -1;
   const safeDefenseIndex = defenseIndex >= 0 ? defenseIndex : -1;
+  const safeShootingIndex = shootingIndex >= 0 ? shootingIndex : -1;
+  const safePassingIndex = passingIndex >= 0 ? passingIndex : -1;
+  const safeLinePositionIndex = linePositionIndex >= 0 ? linePositionIndex : (positionIndex >= 0 ? positionIndex : -1);
   const safeWeightIndex = weightIndex >= 0 ? weightIndex : -1;
 
   return data.slice(1).filter(function(row) {
     return String(row[safeNameIndex]).trim() !== "";
   }).map(function(row) {
     var legacyWeight = normalizeWeight_(safeWeightIndex >= 0 ? row[safeWeightIndex] : 5);
+    var legacyAttack = normalizeRating_(safeAttackIndex >= 0 ? row[safeAttackIndex] : legacyWeight, legacyWeight);
+    var legacyDefense = normalizeRating_(safeDefenseIndex >= 0 ? row[safeDefenseIndex] : legacyWeight, legacyWeight);
     return {
       id: Number(row[safeIdIndex]) || 0,
       name: String(row[safeNameIndex] || ""),
       goals: Number(row[safeGoalsIndex]) || 0,
       assists: Number(row[safeAssistsIndex]) || 0,
       championships: Number(row[safeChampionshipsIndex]) || 0,
-      attack: normalizeRating_(safeAttackIndex >= 0 ? row[safeAttackIndex] : legacyWeight, legacyWeight),
-      defense: normalizeRating_(safeDefenseIndex >= 0 ? row[safeDefenseIndex] : legacyWeight, legacyWeight),
+      speed: normalizeRating_(safeSpeedIndex >= 0 ? row[safeSpeedIndex] : legacyAttack, legacyAttack),
+      finishing: normalizeRating_(safeFinishingIndex >= 0 ? row[safeFinishingIndex] : legacyAttack, legacyAttack),
+      defense: normalizeRating_(safeDefenseIndex >= 0 ? row[safeDefenseIndex] : legacyDefense, legacyDefense),
+      shooting: normalizeRating_(safeShootingIndex >= 0 ? row[safeShootingIndex] : legacyAttack, legacyAttack),
+      passing: normalizeRating_(safePassingIndex >= 0 ? row[safePassingIndex] : (legacyAttack + legacyDefense) / 2, 5),
+      linePosition: normalizeLinePosition_(safeLinePositionIndex >= 0 ? row[safeLinePositionIndex] : "meio"),
       role: normalizeRole_(roleIndex >= 0 ? row[roleIndex] : "linha"),
     };
   });
@@ -115,7 +140,7 @@ function readPlayers_() {
 function writePlayers_(players) {
   const sheet = getSheet_();
   sheet.clearContents();
-  sheet.appendRow(["id", "name", "goals", "assists", "championships", "attack", "defense", "role"]);
+  sheet.appendRow(["id", "name", "goals", "assists", "championships", "speed", "finishing", "defense", "shooting", "passing", "linePosition", "role"]);
 
   if (!players.length) {
     return;
@@ -128,13 +153,17 @@ function writePlayers_(players) {
       Number(player.goals) || 0,
       Number(player.assists) || 0,
       Number(player.championships) || 0,
-      normalizeRating_(player.attack, 5),
+      normalizeRating_(player.speed, 5),
+      normalizeRating_(player.finishing, 5),
       normalizeRating_(player.defense, 5),
+      normalizeRating_(player.shooting, 5),
+      normalizeRating_(player.passing, 5),
+      normalizeLinePosition_(player.linePosition),
       normalizeRole_(player.role),
     ];
   });
 
-  sheet.getRange(2, 1, rows.length, 8).setValues(rows);
+  sheet.getRange(2, 1, rows.length, 12).setValues(rows);
 }
 
 function getSheet_() {
@@ -145,7 +174,7 @@ function getSheet_() {
   }
 
   if (sheet.getLastRow() === 0) {
-    sheet.appendRow(["id", "name", "goals", "assists", "championships", "attack", "defense", "role"]);
+    sheet.appendRow(["id", "name", "goals", "assists", "championships", "speed", "finishing", "defense", "shooting", "passing", "linePosition", "role"]);
   }
 
   return sheet;

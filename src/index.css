@@ -704,7 +704,7 @@ p {
 
 .simple-table {
   width: 100%;
-  min-width: 420px;
+  min-width: 1080px;
   border-collapse: collapse;
 }
 
@@ -804,6 +804,101 @@ p {
 
 .row-btn.delete:hover {
   background: #ffd8dd;
+}
+
+.quick-stat-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.quick-stat-value {
+  min-width: 18px;
+  text-align: right;
+  font-weight: 600;
+}
+
+.quick-stat-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #f4f6ff;
+  font-size: 0.78rem;
+  cursor: pointer;
+  line-height: 1;
+  transition: background 0.15s, transform 0.1s;
+  touch-action: manipulation;
+}
+
+.quick-stat-btn:hover:not(:disabled) {
+  background: #e8ecff;
+  transform: scale(1.07);
+}
+
+.quick-stat-btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.quick-stat-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.stats-table-section {
+  margin-top: 32px;
+}
+
+.stats-table-section h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 12px;
+  color: var(--dark);
+}
+
+.stats-table-controls {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.stats-table-controls .search-input {
+  flex: 1;
+  min-width: 160px;
+  margin-bottom: 0;
+}
+
+.quick-stat-btn.sub {
+  background: #fff0f0;
+  border-color: #ffc5c5;
+  color: #c0392b;
+  font-weight: 700;
+}
+
+.quick-stat-btn.sub:hover:not(:disabled) {
+  background: #ffe0e0;
+}
+
+.stats-season-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.stats-season-table .col-player {
+  width: 40%;
+  text-align: left;
+}
+
+.stats-season-table .col-stat {
+  width: 20%;
+  text-align: center;
+}
+
+.stats-season-table td.col-stat .quick-stat-cell {
+  justify-content: center;
 }
 
 .table-wrap {
@@ -1217,5 +1312,64 @@ p {
 
   .hero-actions {
     flex-direction: column;
+  }
+
+  /* Stats table: no card mode — mantém layout de linha compacto */
+  .stats-season-table,
+  .stats-season-table tbody,
+  .stats-season-table tr,
+  .stats-season-table td {
+    display: flex;
+  }
+
+  .stats-season-table {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .stats-season-table tr {
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 4px;
+    padding: 10px 8px;
+  }
+
+  .stats-season-table td {
+    flex: 1;
+    padding: 0;
+    border: none;
+    font-size: 0.82rem;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .stats-season-table td.col-player {
+    flex: 1.4;
+    justify-content: flex-start;
+    font-weight: 600;
+  }
+
+  /* Esconde o data-label nas células de stats no mobile */
+  .stats-season-table td::before {
+    display: none;
+  }
+
+  .stats-season-table .quick-stat-cell {
+    flex-wrap: nowrap;
+    gap: 4px;
+    justify-content: center;
+  }
+
+  .stats-season-table .quick-stat-btn {
+    padding: 5px 7px;
+    font-size: 0.72rem;
+  }
+
+  .stats-table-controls {
+    flex-direction: column;
+  }
+
+  .stats-table-controls .search-input {
+    width: 100%;
   }
 }

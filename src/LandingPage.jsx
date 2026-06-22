@@ -7,8 +7,20 @@ const STORAGE_KEY = "fut-terca-players";
 const TEAM_PAIR_HISTORY_KEY = "fut-terca-team-pair-history";
 const SHEETS_API_URL = (import.meta.env.VITE_SHEETS_API_URL || "").trim();
 const DEFAULT_PLAYER_ROLE = "linha";
-const DEFAULT_PLAYER_ATTACK = 5;
+const DEFAULT_PLAYER_SPEED = 5;
+const DEFAULT_PLAYER_FINISHING = 5;
 const DEFAULT_PLAYER_DEFENSE = 5;
+const DEFAULT_PLAYER_SHOOTING = 5;
+const DEFAULT_PLAYER_PASSING = 5;
+const DEFAULT_PLAYER_LINE_POSITION = "meio";
+const TEAM_SIZE = 4;
+const RATING_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+const LINE_POSITION_OPTIONS = [
+  { value: "defesa", label: "Defesa" },
+  { value: "meio", label: "Meio" },
+  { value: "ataque", label: "Ataque" },
+];
 
 function sanitizeRating(value, fallback = 5) {
   const parsed = Number(value);
@@ -20,6 +32,10 @@ function sanitizeRating(value, fallback = 5) {
 
 function sanitizeRole(role) {
   return role === "goleiro" ? "goleiro" : DEFAULT_PLAYER_ROLE;
+}
+
+function sanitizeLinePosition(position) {
+  return LINE_POSITION_OPTIONS.some((option) => option.value === position) ? position : DEFAULT_PLAYER_LINE_POSITION;
 }
 
 function normalizePlayerName(name) {
@@ -37,16 +53,25 @@ function sanitizePlayers(players) {
 
   const sanitized = players
     .filter((player) => player && typeof player.name === "string")
-    .map((player, index) => ({
-      id: Number.isFinite(player.id) ? player.id : index + 1,
-      name: player.name,
-      goals: Number.isFinite(player.goals) ? player.goals : 0,
-      assists: Number.isFinite(player.assists) ? player.assists : 0,
-      championships: Number.isFinite(player.championships) ? player.championships : 0,
-      attack: sanitizeRating(player.attack ?? player.weight, DEFAULT_PLAYER_ATTACK),
-      defense: sanitizeRating(player.defense ?? player.weight, DEFAULT_PLAYER_DEFENSE),
-      role: sanitizeRole(player.role),
-    }));
+    .map((player, index) => {
+      const legacyAttack = sanitizeRating(player.attack ?? player.weight, DEFAULT_PLAYER_FINISHING);
+      const legacyDefense = sanitizeRating(player.defense ?? player.weight, DEFAULT_PLAYER_DEFENSE);
+
+      return {
+        id: Number.isFinite(player.id) ? player.id : index + 1,
+        name: player.name,
+        goals: Number.isFinite(player.goals) ? player.goals : 0,
+        assists: Number.isFinite(player.assists) ? player.assists : 0,
+        championships: Number.isFinite(player.championships) ? player.championships : 0,
+        speed: sanitizeRating(player.speed ?? legacyAttack, DEFAULT_PLAYER_SPEED),
+        finishing: sanitizeRating(player.finishing ?? legacyAttack, DEFAULT_PLAYER_FINISHING),
+        defense: sanitizeRating(player.defense ?? legacyDefense, DEFAULT_PLAYER_DEFENSE),
+        shooting: sanitizeRating(player.shooting ?? legacyAttack, DEFAULT_PLAYER_SHOOTING),
+        passing: sanitizeRating(player.passing ?? (legacyAttack + legacyDefense) / 2, DEFAULT_PLAYER_PASSING),
+        linePosition: sanitizeLinePosition(player.linePosition ?? player.position),
+        role: sanitizeRole(player.role),
+      };
+    });
 
   const mergedByName = new Map();
 
@@ -62,9 +87,15 @@ function sanitizePlayers(players) {
     existing.goals += player.goals;
     existing.assists += player.assists;
     existing.championships += player.championships;
-    existing.attack = Math.max(existing.attack, player.attack);
+    existing.speed = Math.max(existing.speed, player.speed);
+    existing.finishing = Math.max(existing.finishing, player.finishing);
     existing.defense = Math.max(existing.defense, player.defense);
+    existing.shooting = Math.max(existing.shooting, player.shooting);
+    existing.passing = Math.max(existing.passing, player.passing);
     existing.role = existing.role === "goleiro" || player.role === "goleiro" ? "goleiro" : DEFAULT_PLAYER_ROLE;
+    if (existing.role !== "goleiro") {
+      existing.linePosition = sanitizeLinePosition(player.linePosition);
+    }
   });
 
   const usedIds = new Set();
@@ -178,7 +209,21 @@ function updatePairHistoryWithTeams(currentHistory, teams) {
 }
 
 function getHiddenLevelScore(player) {
-  return (sanitizeRating(player.attack, DEFAULT_PLAYER_ATTACK) + sanitizeRating(player.defense, DEFAULT_PLAYER_DEFENSE)) / 2;
+  const speed = sanitizeRating(player.speed, DEFAULT_PLAYER_SPEED);
+  const finishing = sanitizeRating(player.finishing, DEFAULT_PLAYER_FINISHING);
+  const defense = sanitizeRating(player.defense, DEFAULT_PLAYER_DEFENSE);
+  const shooting = sanitizeRating(player.shooting, DEFAULT_PLAYER_SHOOTING);
+  const passing = sanitizeRating(player.passing, DEFAULT_PLAYER_PASSING);
+
+  return (speed + finishing + defense + shooting + passing) / 5;
+}
+
+function isGoalkeeper(player) {
+  return sanitizeRole(player.role) === "goleiro";
+}
+
+function getTeamLineCount(team) {
+  return team.players.filter((player) => !isGoalkeeper(player)).length;
 }
 
 function buildBalancedTeams(players, teamsCount, randomSeed, pairHistory = {}) {
@@ -187,10 +232,12 @@ function buildBalancedTeams(players, teamsCount, randomSeed, pairHistory = {}) {
   }
 
   const randomSalt = Number.isFinite(randomSeed) ? randomSeed : Date.now();
-  const randomByPlayer = (player, teamId = 0) => {
-    const base = Math.sin((player.id + 1) * 97 + (teamId + 1) * 37 + randomSalt * 0.001) * 10000;
+  const seededRandom = (id) => {
+    const base = Math.sin((id + 1) * 97 + randomSalt * 0.001) * 10000;
     return base - Math.floor(base);
   };
+
+  const playersForTeams = players.slice(0, teamsCount * TEAM_SIZE);
 
   const teams = Array.from({ length: teamsCount }, (_, index) => ({
     id: index + 1,
@@ -199,103 +246,168 @@ function buildBalancedTeams(players, teamsCount, randomSeed, pairHistory = {}) {
     totalAverage: 0,
   }));
 
-  const playersForTeams = players.slice(0, teamsCount * 4);
-  const remainingPlayers = [...playersForTeams].sort((a, b) => {
-    const averageDiff = getHiddenLevelScore(b) - getHiddenLevelScore(a);
-    if (averageDiff !== 0) {
-      return averageDiff;
-    }
-
-    return randomByPlayer(a) - randomByPlayer(b);
+  // Sort players by OVR descending with seeded tiebreak for variety
+  const sorted = [...playersForTeams].sort((a, b) => {
+    const diff = getHiddenLevelScore(b) - getHiddenLevelScore(a);
+    return diff !== 0 ? diff : seededRandom(a.id) - seededRandom(b.id);
   });
 
-  // Keep the classic snake distribution to prioritize weight balance.
-  const snakeOrder = [];
-  let teamIndex = 0;
-  let direction = 1;
-
-  for (let slot = 0; slot < playersForTeams.length; slot += 1) {
-    snakeOrder.push(teamIndex);
-
-    if (direction === 1) {
-      if (teamIndex === teams.length - 1) {
-        direction = -1;
-      } else {
-        teamIndex += 1;
-      }
-    } else if (teamIndex === 0) {
-      direction = 1;
+  // Snake draft: distributes strong players evenly across teams as starting point
+  let snakeDir = 1;
+  let snakeTi = 0;
+  for (const player of sorted) {
+    teams[snakeTi].players.push(player);
+    teams[snakeTi].totalAverage += getHiddenLevelScore(player);
+    if (snakeDir === 1) {
+      if (snakeTi === teamsCount - 1) snakeDir = -1;
+      else snakeTi += 1;
     } else {
-      teamIndex -= 1;
+      if (snakeTi === 0) snakeDir = 1;
+      else snakeTi -= 1;
     }
   }
 
-  const scoreTolerance = 0.55;
-  const minimumCandidatePool = 6;
-  const carrierThreshold = 8;
-  const eliteThreshold = 8;
+  // Compute sum of squared deviations from mean (variance proxy) — lower is better
+  function computeVariance() {
+    const mean = teams.reduce((s, t) => s + t.totalAverage, 0) / teams.length;
+    return teams.reduce((s, t) => s + (t.totalAverage - mean) ** 2, 0);
+  }
 
-  const hasCarrier = (team) => team.players.some((player) => getHiddenLevelScore(player) >= carrierThreshold);
-  const hasElite = (team) => team.players.some((player) => getHiddenLevelScore(player) >= eliteThreshold);
+  // Ideal: 1 defesa, 2 meio, 1 ataque per team of 4 — lower score is better
+  function computePositionImbalance() {
+    return teams.reduce((total, team) => {
+      const counts = { defesa: 0, meio: 0, ataque: 0 };
+      team.players.forEach((p) => {
+        counts[sanitizeLinePosition(p.linePosition)] += 1;
+      });
+      return total + Math.abs(counts.defesa - 1) + Math.abs(counts.meio - 2) + Math.abs(counts.ataque - 1);
+    }, 0);
+  }
 
-  snakeOrder.forEach((targetTeamIndex) => {
-    const team = teams[targetTeamIndex];
-    if (!remainingPlayers.length || team.players.length >= 4) {
-      return;
-    }
+  // Phase 1 — OVR variance optimization: accept swaps that reduce OVR variance
+  let improved = true;
+  while (improved) {
+    improved = false;
+    for (let t1 = 0; t1 < teams.length && !improved; t1 += 1) {
+      for (let t2 = t1 + 1; t2 < teams.length && !improved; t2 += 1) {
+        for (let i = 0; i < teams[t1].players.length && !improved; i += 1) {
+          for (let j = 0; j < teams[t2].players.length && !improved; j += 1) {
+            const p1 = teams[t1].players[i];
+            const p2 = teams[t2].players[j];
+            const s1 = getHiddenLevelScore(p1);
+            const s2 = getHiddenLevelScore(p2);
 
-    const topScore = getHiddenLevelScore(remainingPlayers[0]);
-    let lastCandidateIndex = Math.min(minimumCandidatePool - 1, remainingPlayers.length - 1);
+            const prevVariance = computeVariance();
 
-    for (let i = 1; i < remainingPlayers.length; i += 1) {
-      if (topScore - getHiddenLevelScore(remainingPlayers[i]) <= scoreTolerance) {
-        lastCandidateIndex = i;
-      } else {
-        break;
-      }
-    }
+            teams[t1].players[i] = p2;
+            teams[t2].players[j] = p1;
+            teams[t1].totalAverage += s2 - s1;
+            teams[t2].totalAverage += s1 - s2;
 
-    let selectedIndex = 0;
-    let selectedCost = Number.POSITIVE_INFINITY;
-
-    const teamsWithoutCarrier = teams.filter((candidateTeam) => !hasCarrier(candidateTeam)).length;
-    const carriersRemaining = remainingPlayers.filter((candidate) => getHiddenLevelScore(candidate) >= carrierThreshold).length;
-    const teamsWithoutElite = teams.filter((candidateTeam) => !hasElite(candidateTeam)).length;
-    const eliteRemaining = remainingPlayers.filter((candidate) => getHiddenLevelScore(candidate) >= eliteThreshold).length;
-
-    for (let i = 0; i <= lastCandidateIndex; i += 1) {
-      const candidate = remainingPlayers[i];
-      const candidateScore = getHiddenLevelScore(candidate);
-      const repeatPenalty = team.players.reduce((acc, teammate) => {
-        const pairKey = createPairKey(teammate.id, candidate.id);
-        const repeatCount = pairHistory[pairKey] || 0;
-        if (repeatCount <= 0) {
-          return acc;
+            if (computeVariance() < prevVariance - 0.0001) {
+              improved = true;
+            } else {
+              teams[t1].players[i] = p1;
+              teams[t2].players[j] = p2;
+              teams[t1].totalAverage += s1 - s2;
+              teams[t2].totalAverage += s2 - s1;
+            }
+          }
         }
-
-        // Strongly discourage repeated pairs while keeping weight as the first filter.
-        return acc + repeatCount * repeatCount + 1.5;
-      }, 0);
-
-      // If there are enough 7.5+ players left, force each team to get at least one carrier.
-      const carrierPenalty = !hasCarrier(team) && candidateScore < carrierThreshold && carriersRemaining >= teamsWithoutCarrier ? 6 : 0;
-
-      // Avoid concentrating 8+ in one team while other teams still have none.
-      const elitePenalty = hasElite(team) && candidateScore >= eliteThreshold && eliteRemaining >= teamsWithoutElite ? 3.5 : 0;
-
-      const noise = randomByPlayer(candidate, team.id) * 0.2;
-      const cost = repeatPenalty * 2.2 + carrierPenalty + elitePenalty + noise;
-
-      if (cost < selectedCost) {
-        selectedCost = cost;
-        selectedIndex = i;
       }
     }
+  }
 
-    const [selectedPlayer] = remainingPlayers.splice(selectedIndex, 1);
-    team.players.push(selectedPlayer);
-    team.totalAverage += getHiddenLevelScore(selectedPlayer);
-  });
+  // Phase 2 — Position balance: accept swaps that improve position distribution
+  // without worsening OVR variance beyond a small tolerance
+  const ovrTolerance = 0.05;
+  let posImproved = true;
+  while (posImproved) {
+    posImproved = false;
+    for (let t1 = 0; t1 < teams.length && !posImproved; t1 += 1) {
+      for (let t2 = t1 + 1; t2 < teams.length && !posImproved; t2 += 1) {
+        for (let i = 0; i < teams[t1].players.length && !posImproved; i += 1) {
+          for (let j = 0; j < teams[t2].players.length && !posImproved; j += 1) {
+            const p1 = teams[t1].players[i];
+            const p2 = teams[t2].players[j];
+            const s1 = getHiddenLevelScore(p1);
+            const s2 = getHiddenLevelScore(p2);
+
+            const prevVariance = computeVariance();
+            const prevPos = computePositionImbalance();
+
+            teams[t1].players[i] = p2;
+            teams[t2].players[j] = p1;
+            teams[t1].totalAverage += s2 - s1;
+            teams[t2].totalAverage += s1 - s2;
+
+            const newVariance = computeVariance();
+            const newPos = computePositionImbalance();
+
+            if (newPos < prevPos && newVariance <= prevVariance + ovrTolerance) {
+              posImproved = true;
+            } else {
+              teams[t1].players[i] = p1;
+              teams[t2].players[j] = p2;
+              teams[t1].totalAverage += s1 - s2;
+              teams[t2].totalAverage += s2 - s1;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Phase 3 — Pair history: reduce repeated pairs without worsening OVR or position balance
+  const tolerance = 0.0001;
+  let pairImproved = true;
+  while (pairImproved) {
+    pairImproved = false;
+    for (let t1 = 0; t1 < teams.length && !pairImproved; t1 += 1) {
+      for (let t2 = t1 + 1; t2 < teams.length && !pairImproved; t2 += 1) {
+        for (let i = 0; i < teams[t1].players.length && !pairImproved; i += 1) {
+          for (let j = 0; j < teams[t2].players.length && !pairImproved; j += 1) {
+            const p1 = teams[t1].players[i];
+            const p2 = teams[t2].players[j];
+            const s1 = getHiddenLevelScore(p1);
+            const s2 = getHiddenLevelScore(p2);
+
+            const prevVariance = computeVariance();
+            const prevPos = computePositionImbalance();
+
+            const countRepeatPairs = (team) =>
+              team.players.reduce((acc, player, pi) => {
+                for (let qi = pi + 1; qi < team.players.length; qi += 1) {
+                  const key = createPairKey(player.id, team.players[qi].id);
+                  acc += pairHistory[key] || 0;
+                }
+                return acc;
+              }, 0);
+
+            const prevRepeats = countRepeatPairs(teams[t1]) + countRepeatPairs(teams[t2]);
+
+            teams[t1].players[i] = p2;
+            teams[t2].players[j] = p1;
+            teams[t1].totalAverage += s2 - s1;
+            teams[t2].totalAverage += s1 - s2;
+
+            const newVariance = computeVariance();
+            const newPos = computePositionImbalance();
+            const newRepeats = countRepeatPairs(teams[t1]) + countRepeatPairs(teams[t2]);
+
+            if (newRepeats < prevRepeats && newVariance <= prevVariance + tolerance && newPos <= prevPos) {
+              pairImproved = true;
+            } else {
+              teams[t1].players[i] = p1;
+              teams[t2].players[j] = p2;
+              teams[t1].totalAverage += s1 - s2;
+              teams[t2].totalAverage += s2 - s1;
+            }
+          }
+        }
+      }
+    }
+  }
 
   return teams;
 }
@@ -340,12 +452,19 @@ export default function LandingPage() {
     goals: "",
     assists: "",
     championships: "",
-    attack: String(DEFAULT_PLAYER_ATTACK),
+    speed: String(DEFAULT_PLAYER_SPEED),
+    finishing: String(DEFAULT_PLAYER_FINISHING),
     defense: String(DEFAULT_PLAYER_DEFENSE),
+    shooting: String(DEFAULT_PLAYER_SHOOTING),
+    passing: String(DEFAULT_PLAYER_PASSING),
+    linePosition: DEFAULT_PLAYER_LINE_POSITION,
     role: DEFAULT_PLAYER_ROLE,
   });
   const [searchTerm, setSearchTerm] = useState("");
   const [weeklySearchTerm, setWeeklySearchTerm] = useState("");
+  const [statsSearchTerm, setStatsSearchTerm] = useState("");
+  const [statsSortBy, setStatsSortBy] = useState("goals");
+  const [statsSortDirection, setStatsSortDirection] = useState("desc");
   const [sortBy, setSortBy] = useState("name");
   const [sortDirection, setSortDirection] = useState("asc");
   const [teamsDrawSeed, setTeamsDrawSeed] = useState(Date.now());
@@ -359,8 +478,12 @@ export default function LandingPage() {
     goals: "0",
     assists: "0",
     championships: "0",
-    attack: String(DEFAULT_PLAYER_ATTACK),
+    speed: String(DEFAULT_PLAYER_SPEED),
+    finishing: String(DEFAULT_PLAYER_FINISHING),
     defense: String(DEFAULT_PLAYER_DEFENSE),
+    shooting: String(DEFAULT_PLAYER_SHOOTING),
+    passing: String(DEFAULT_PLAYER_PASSING),
+    linePosition: DEFAULT_PLAYER_LINE_POSITION,
     role: DEFAULT_PLAYER_ROLE,
   });
   const [isBulkEditing, setIsBulkEditing] = useState(false);
@@ -485,8 +608,14 @@ export default function LandingPage() {
         current.goals += player.goals;
         current.assists += player.assists;
         current.championships += player.championships || 0;
-        current.attack = Math.max(current.attack, sanitizeRating(player.attack, DEFAULT_PLAYER_ATTACK));
+        current.speed = Math.max(current.speed, sanitizeRating(player.speed, DEFAULT_PLAYER_SPEED));
+        current.finishing = Math.max(current.finishing, sanitizeRating(player.finishing, DEFAULT_PLAYER_FINISHING));
         current.defense = Math.max(current.defense, sanitizeRating(player.defense, DEFAULT_PLAYER_DEFENSE));
+        current.shooting = Math.max(current.shooting, sanitizeRating(player.shooting, DEFAULT_PLAYER_SHOOTING));
+        current.passing = Math.max(current.passing, sanitizeRating(player.passing, DEFAULT_PLAYER_PASSING));
+        if (sanitizeRole(current.role) !== "goleiro") {
+          current.linePosition = sanitizeLinePosition(player.linePosition);
+        }
         return;
       }
       grouped.set(key, {
@@ -495,8 +624,12 @@ export default function LandingPage() {
         goals: player.goals,
         assists: player.assists,
         championships: player.championships || 0,
-        attack: sanitizeRating(player.attack, DEFAULT_PLAYER_ATTACK),
+        speed: sanitizeRating(player.speed, DEFAULT_PLAYER_SPEED),
+        finishing: sanitizeRating(player.finishing, DEFAULT_PLAYER_FINISHING),
         defense: sanitizeRating(player.defense, DEFAULT_PLAYER_DEFENSE),
+        shooting: sanitizeRating(player.shooting, DEFAULT_PLAYER_SHOOTING),
+        passing: sanitizeRating(player.passing, DEFAULT_PLAYER_PASSING),
+        linePosition: sanitizeLinePosition(player.linePosition),
         role: sanitizeRole(player.role),
       });
     });
@@ -567,11 +700,23 @@ export default function LandingPage() {
       if (sortBy === "assists") {
         return getSafeNumber(a.assists) - getSafeNumber(b.assists);
       }
-      if (sortBy === "attack") {
-        return sanitizeRating(a.attack, DEFAULT_PLAYER_ATTACK) - sanitizeRating(b.attack, DEFAULT_PLAYER_ATTACK);
+      if (sortBy === "overall") {
+        return getHiddenLevelScore(a) - getHiddenLevelScore(b);
+      }
+      if (sortBy === "speed") {
+        return sanitizeRating(a.speed, DEFAULT_PLAYER_SPEED) - sanitizeRating(b.speed, DEFAULT_PLAYER_SPEED);
+      }
+      if (sortBy === "finishing") {
+        return sanitizeRating(a.finishing, DEFAULT_PLAYER_FINISHING) - sanitizeRating(b.finishing, DEFAULT_PLAYER_FINISHING);
       }
       if (sortBy === "defense") {
         return sanitizeRating(a.defense, DEFAULT_PLAYER_DEFENSE) - sanitizeRating(b.defense, DEFAULT_PLAYER_DEFENSE);
+      }
+      if (sortBy === "shooting") {
+        return sanitizeRating(a.shooting, DEFAULT_PLAYER_SHOOTING) - sanitizeRating(b.shooting, DEFAULT_PLAYER_SHOOTING);
+      }
+      if (sortBy === "passing") {
+        return sanitizeRating(a.passing, DEFAULT_PLAYER_PASSING) - sanitizeRating(b.passing, DEFAULT_PLAYER_PASSING);
       }
       return getSafeNumber(a.championships) - getSafeNumber(b.championships);
     });
@@ -580,10 +725,7 @@ export default function LandingPage() {
   }, [filteredPlayers, sortBy, sortDirection]);
 
   const weeklyAvailablePlayers = useMemo(
-    () =>
-      consolidatedPlayers
-        .filter((player) => sanitizeRole(player.role) !== "goleiro")
-        .sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
+    () => [...consolidatedPlayers].filter((player) => sanitizeRole(player.role) !== "goleiro").sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
     [consolidatedPlayers]
   );
 
@@ -613,9 +755,9 @@ export default function LandingPage() {
     return weeklyAvailablePlayers.filter((player) => player.name.toLowerCase().includes(term));
   }, [weeklyAvailablePlayers, weeklySearchTerm]);
 
-  const weeklyTeamsCount = Math.floor(weeklySelectedPlayers.length / 4);
+  const weeklyTeamsCount = Math.floor(weeklySelectedPlayers.length / TEAM_SIZE);
   const weeklyReservePlayers = useMemo(
-    () => weeklySelectedPlayers.slice(weeklyTeamsCount * 4),
+    () => weeklySelectedPlayers.slice(weeklyTeamsCount * TEAM_SIZE),
     [weeklySelectedPlayers, weeklyTeamsCount]
   );
 
@@ -656,7 +798,7 @@ export default function LandingPage() {
     const lines = ["Times da semana", ""];
 
     balancedTeams.forEach((team) => {
-      lines.push(`${team.name} (${team.players.length}/4)`);
+      lines.push(`${team.name} (${team.players.length}/${TEAM_SIZE})`);
       team.players.forEach((player) => {
         lines.push(`- ${player.name}`);
       });
@@ -671,7 +813,7 @@ export default function LandingPage() {
       lines.push("");
     }
 
-    lines.push("Goleiros fixos ficam fora da montagem automatica.");
+    lines.push("Time com goleiro dedicado recebe linha um pouco mais leve para compensar revezamento dos sem goleiro.");
 
     const message = encodeURIComponent(lines.join("\n"));
     window.open(`https://wa.me/?text=${message}`, "_blank", "noopener,noreferrer");
@@ -683,8 +825,12 @@ export default function LandingPage() {
     const goals = Number.parseInt(formData.goals || "0", 10);
     const assists = Number.parseInt(formData.assists || "0", 10);
     const championships = Number.parseInt(formData.championships || "0", 10);
-    const attack = sanitizeRating(formData.attack, DEFAULT_PLAYER_ATTACK);
+    const speed = sanitizeRating(formData.speed, DEFAULT_PLAYER_SPEED);
+    const finishing = sanitizeRating(formData.finishing, DEFAULT_PLAYER_FINISHING);
     const defense = sanitizeRating(formData.defense, DEFAULT_PLAYER_DEFENSE);
+    const shooting = sanitizeRating(formData.shooting, DEFAULT_PLAYER_SHOOTING);
+    const passing = sanitizeRating(formData.passing, DEFAULT_PLAYER_PASSING);
+    const linePosition = sanitizeLinePosition(formData.linePosition);
     const role = sanitizeRole(formData.role);
     if (!name) {
       return;
@@ -705,8 +851,12 @@ export default function LandingPage() {
               goals: player.goals + safeGoals,
               assists: player.assists + safeAssists,
               championships: (player.championships || 0) + safeChampionships,
-              attack,
+              speed,
+              finishing,
               defense,
+              shooting,
+              passing,
+              linePosition,
               role,
             }
           : player
@@ -719,8 +869,12 @@ export default function LandingPage() {
           goals: safeGoals,
           assists: safeAssists,
           championships: safeChampionships,
-          attack,
+          speed,
+          finishing,
           defense,
+          shooting,
+          passing,
+          linePosition,
           role,
         },
         ...players,
@@ -735,8 +889,12 @@ export default function LandingPage() {
       goals: "",
       assists: "",
       championships: "",
-      attack: String(DEFAULT_PLAYER_ATTACK),
+      speed: String(DEFAULT_PLAYER_SPEED),
+      finishing: String(DEFAULT_PLAYER_FINISHING),
       defense: String(DEFAULT_PLAYER_DEFENSE),
+      shooting: String(DEFAULT_PLAYER_SHOOTING),
+      passing: String(DEFAULT_PLAYER_PASSING),
+      linePosition: DEFAULT_PLAYER_LINE_POSITION,
       role: DEFAULT_PLAYER_ROLE,
     });
   }
@@ -747,8 +905,12 @@ export default function LandingPage() {
       goals: String(player.goals),
       assists: String(player.assists),
       championships: String(player.championships || 0),
-      attack: String(sanitizeRating(player.attack, DEFAULT_PLAYER_ATTACK)),
+      speed: String(sanitizeRating(player.speed, DEFAULT_PLAYER_SPEED)),
+      finishing: String(sanitizeRating(player.finishing, DEFAULT_PLAYER_FINISHING)),
       defense: String(sanitizeRating(player.defense, DEFAULT_PLAYER_DEFENSE)),
+      shooting: String(sanitizeRating(player.shooting, DEFAULT_PLAYER_SHOOTING)),
+      passing: String(sanitizeRating(player.passing, DEFAULT_PLAYER_PASSING)),
+      linePosition: sanitizeLinePosition(player.linePosition),
       role: sanitizeRole(player.role),
     };
   }
@@ -795,8 +957,12 @@ export default function LandingPage() {
         goals: Number.isNaN(goals) || goals < 0 ? 0 : goals,
         assists: Number.isNaN(assists) || assists < 0 ? 0 : assists,
         championships: Number.isNaN(championships) || championships < 0 ? 0 : championships,
-        attack: sanitizeRating(draft.attack, DEFAULT_PLAYER_ATTACK),
+        speed: sanitizeRating(draft.speed, DEFAULT_PLAYER_SPEED),
+        finishing: sanitizeRating(draft.finishing, DEFAULT_PLAYER_FINISHING),
         defense: sanitizeRating(draft.defense, DEFAULT_PLAYER_DEFENSE),
+        shooting: sanitizeRating(draft.shooting, DEFAULT_PLAYER_SHOOTING),
+        passing: sanitizeRating(draft.passing, DEFAULT_PLAYER_PASSING),
+        linePosition: sanitizeLinePosition(draft.linePosition),
         role: sanitizeRole(draft.role),
       };
     });
@@ -817,8 +983,12 @@ export default function LandingPage() {
       goals: String(player.goals),
       assists: String(player.assists),
       championships: String(player.championships || 0),
-      attack: String(sanitizeRating(player.attack, DEFAULT_PLAYER_ATTACK)),
+      speed: String(sanitizeRating(player.speed, DEFAULT_PLAYER_SPEED)),
+      finishing: String(sanitizeRating(player.finishing, DEFAULT_PLAYER_FINISHING)),
       defense: String(sanitizeRating(player.defense, DEFAULT_PLAYER_DEFENSE)),
+      shooting: String(sanitizeRating(player.shooting, DEFAULT_PLAYER_SHOOTING)),
+      passing: String(sanitizeRating(player.passing, DEFAULT_PLAYER_PASSING)),
+      linePosition: sanitizeLinePosition(player.linePosition),
       role: sanitizeRole(player.role),
     });
   }
@@ -830,8 +1000,12 @@ export default function LandingPage() {
       goals: "0",
       assists: "0",
       championships: "0",
-      attack: String(DEFAULT_PLAYER_ATTACK),
+      speed: String(DEFAULT_PLAYER_SPEED),
+      finishing: String(DEFAULT_PLAYER_FINISHING),
       defense: String(DEFAULT_PLAYER_DEFENSE),
+      shooting: String(DEFAULT_PLAYER_SHOOTING),
+      passing: String(DEFAULT_PLAYER_PASSING),
+      linePosition: DEFAULT_PLAYER_LINE_POSITION,
       role: DEFAULT_PLAYER_ROLE,
     });
   }
@@ -841,8 +1015,12 @@ export default function LandingPage() {
     const goals = Number.parseInt(editDraft.goals || "0", 10);
     const assists = Number.parseInt(editDraft.assists || "0", 10);
     const championships = Number.parseInt(editDraft.championships || "0", 10);
-    const attack = sanitizeRating(editDraft.attack, DEFAULT_PLAYER_ATTACK);
+    const speed = sanitizeRating(editDraft.speed, DEFAULT_PLAYER_SPEED);
+    const finishing = sanitizeRating(editDraft.finishing, DEFAULT_PLAYER_FINISHING);
     const defense = sanitizeRating(editDraft.defense, DEFAULT_PLAYER_DEFENSE);
+    const shooting = sanitizeRating(editDraft.shooting, DEFAULT_PLAYER_SHOOTING);
+    const passing = sanitizeRating(editDraft.passing, DEFAULT_PLAYER_PASSING);
+    const linePosition = sanitizeLinePosition(editDraft.linePosition);
     const role = sanitizeRole(editDraft.role);
 
     const nextPlayers = players.map((player) =>
@@ -853,8 +1031,12 @@ export default function LandingPage() {
             goals: Number.isNaN(goals) || goals < 0 ? 0 : goals,
             assists: Number.isNaN(assists) || assists < 0 ? 0 : assists,
             championships: Number.isNaN(championships) || championships < 0 ? 0 : championships,
-            attack,
+            speed,
+            finishing,
             defense,
+            shooting,
+            passing,
+            linePosition,
             role,
           }
         : player
@@ -882,6 +1064,14 @@ export default function LandingPage() {
     if (editingPlayerId === playerId) {
       cancelEdit();
     }
+  }
+
+  function handleQuickStat(playerId, field, delta = 1) {
+    const nextPlayers = players.map((player) =>
+      player.id === playerId ? { ...player, [field]: Math.max(0, (player[field] || 0) + delta) } : player
+    );
+    setPlayers(nextPlayers);
+    syncPlayersNow(nextPlayers);
   }
 
   function scrollTo(id) {
@@ -1048,9 +1238,10 @@ export default function LandingPage() {
         <div className="container">
           <div className="section-header">
             <p className="section-eyebrow">Times equilibrados</p>
-            <h2>Montagem automatica por media</h2>
-            <p className="sync-note">Os times sao equilibrados pela media entre ataque e defesa.</p>
-            <p className="sync-note">Goleiros sao fixos e ficam fora dessa montagem automatica.</p>
+            <h2>Montagem automatica por overall</h2>
+            <p className="sync-note">Overall: media de velocidade, finalizacao, defesa, chute e passe.</p>
+            <p className="sync-note">Formacao base por time: 1 defesa, 2 meio, 1 ataque e 1 vaga extra (preferindo goleiro).</p>
+            <p className="sync-note">Quando o time tem goleiro dedicado, o algoritmo reduz um pouco a media de linha para compensar.</p>
           </div>
 
           <div className="weekly-selection">
@@ -1093,7 +1284,7 @@ export default function LandingPage() {
             <>
               <div className="teams-controls">
                 <strong>Times fechados: {weeklyTeamsCount}</strong>
-                <span>{weeklyReservePlayers.length} reserva(s) para completar o próximo time de 4</span>
+                <span>{weeklyReservePlayers.length} reserva(s) para completar o próximo time de {TEAM_SIZE}</span>
                 <button
                   type="button"
                   className="sort-toggle"
@@ -1122,12 +1313,12 @@ export default function LandingPage() {
               {balancedTeams.map((team) => (
                 <article key={team.id} className="team-card">
                   <h3>{team.name}</h3>
-                    <p className="team-meta">{team.players.length}/4 jogadores</p>
+                    <p className="team-meta">{team.players.length}/{TEAM_SIZE} jogadores</p>
                   <ul>
                     {team.players.map((player) => (
                       <li key={player.id}>
                         <span>{player.name}</span>
-                        <small>{player.goals}G · {player.assists}A</small>
+                        <small>{sanitizeRole(player.role) === "goleiro" ? "Goleiro" : sanitizeLinePosition(player.linePosition)} · OVR {getHiddenLevelScore(player).toFixed(1)}</small>
                       </li>
                     ))}
                   </ul>
@@ -1137,12 +1328,12 @@ export default function LandingPage() {
               {weeklyReservePlayers.length > 0 && (
                 <div className="reserve-card">
                   <h3>Reservas para o próximo time</h3>
-                  <p className="team-meta">Ficam de fora da montagem atual até fechar 4.</p>
+                  <p className="team-meta">Ficam de fora da montagem atual até fechar {TEAM_SIZE}.</p>
                   <ul>
                     {weeklyReservePlayers.map((player) => (
                       <li key={player.id}>
                         <span>{player.name}</span>
-                        <small>{player.goals}G · {player.assists}A</small>
+                        <small>{sanitizeRole(player.role) === "goleiro" ? "Goleiro" : sanitizeLinePosition(player.linePosition)} · OVR {getHiddenLevelScore(player).toFixed(1)}</small>
                       </li>
                     ))}
                   </ul>
@@ -1150,7 +1341,7 @@ export default function LandingPage() {
               )}
             </>
           ) : (
-            <p className="sync-note">Selecione pelo menos um jogador de linha para montar os times.</p>
+            <p className="sync-note">Selecione pelo menos {TEAM_SIZE} jogadores para montar os times.</p>
           )}
         </div>
       </section>
@@ -1209,21 +1400,25 @@ export default function LandingPage() {
                 />
               </label>
               <label>
-                Ataque
+                Velocidade
                 <select
-                  value={formData.attack}
-                  onChange={(event) => setFormData((current) => ({ ...current, attack: event.target.value }))}
+                  value={formData.speed}
+                  onChange={(event) => setFormData((current) => ({ ...current, speed: event.target.value }))}
                 >
-                  <option value="1">1</option>
-                  <option value="2">2</option>
-                  <option value="3">3</option>
-                  <option value="4">4</option>
-                  <option value="5">5</option>
-                  <option value="6">6</option>
-                  <option value="7">7</option>
-                  <option value="8">8</option>
-                  <option value="9">9</option>
-                  <option value="10">10</option>
+                  {RATING_OPTIONS.map((value) => (
+                    <option key={value} value={String(value)}>{value}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Finalizacao
+                <select
+                  value={formData.finishing}
+                  onChange={(event) => setFormData((current) => ({ ...current, finishing: event.target.value }))}
+                >
+                  {RATING_OPTIONS.map((value) => (
+                    <option key={value} value={String(value)}>{value}</option>
+                  ))}
                 </select>
               </label>
               <label>
@@ -1232,16 +1427,42 @@ export default function LandingPage() {
                   value={formData.defense}
                   onChange={(event) => setFormData((current) => ({ ...current, defense: event.target.value }))}
                 >
-                  <option value="1">1</option>
-                  <option value="2">2</option>
-                  <option value="3">3</option>
-                  <option value="4">4</option>
-                  <option value="5">5</option>
-                  <option value="6">6</option>
-                  <option value="7">7</option>
-                  <option value="8">8</option>
-                  <option value="9">9</option>
-                  <option value="10">10</option>
+                  {RATING_OPTIONS.map((value) => (
+                    <option key={value} value={String(value)}>{value}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Chute
+                <select
+                  value={formData.shooting}
+                  onChange={(event) => setFormData((current) => ({ ...current, shooting: event.target.value }))}
+                >
+                  {RATING_OPTIONS.map((value) => (
+                    <option key={value} value={String(value)}>{value}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Passe
+                <select
+                  value={formData.passing}
+                  onChange={(event) => setFormData((current) => ({ ...current, passing: event.target.value }))}
+                >
+                  {RATING_OPTIONS.map((value) => (
+                    <option key={value} value={String(value)}>{value}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Posicao de linha
+                <select
+                  value={formData.linePosition}
+                  onChange={(event) => setFormData((current) => ({ ...current, linePosition: event.target.value }))}
+                >
+                  {LINE_POSITION_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
                 </select>
               </label>
               <label>
@@ -1271,11 +1492,12 @@ export default function LandingPage() {
               <div className="players-filters">
                 <select value={sortBy} onChange={(event) => setSortBy(event.target.value)} className="sort-select">
                   <option value="name">Jogador</option>
-                  <option value="goals">Gols</option>
-                  <option value="assists">Assistencias</option>
-                  <option value="attack">Ataque</option>
+                  <option value="overall">Overall</option>
+                  <option value="speed">Velocidade</option>
+                  <option value="finishing">Finalizacao</option>
                   <option value="defense">Defesa</option>
-                  <option value="championships">Titulos</option>
+                  <option value="shooting">Chute</option>
+                  <option value="passing">Passe</option>
                 </select>
                 <button
                   type="button"
@@ -1301,11 +1523,13 @@ export default function LandingPage() {
                     <tr>
                       <th>Jogador</th>
                       <th>Funcao</th>
-                      <th>Ataque</th>
+                      <th>Posicao</th>
+                      <th>Vel</th>
+                      <th>Fin</th>
                       <th>Defesa</th>
-                      <th>Gols</th>
-                      <th>Assistencias</th>
-                      <th>Titulos</th>
+                      <th>Chute</th>
+                      <th>Passe</th>
+                      <th>OVR</th>
                       <th>Acoes</th>
                     </tr>
                   </thead>
@@ -1354,43 +1578,83 @@ export default function LandingPage() {
                             sanitizeRole(player.role) === "goleiro" ? "Goleiro" : "Linha"
                           )}
                         </td>
-                        <td data-label="Ataque">
+                        <td data-label="Posicao">
                           {isBulkEditing ? (
                             <select
                               className="stat-select"
-                              value={bulkDrafts[player.id]?.attack || String(DEFAULT_PLAYER_ATTACK)}
-                              onChange={(event) => updateBulkDraftField(player.id, "attack", event.target.value)}
+                              value={bulkDrafts[player.id]?.linePosition || DEFAULT_PLAYER_LINE_POSITION}
+                              onChange={(event) => updateBulkDraftField(player.id, "linePosition", event.target.value)}
+                              disabled={(bulkDrafts[player.id]?.role || DEFAULT_PLAYER_ROLE) === "goleiro"}
                             >
-                              <option value="1">1</option>
-                              <option value="2">2</option>
-                              <option value="3">3</option>
-                              <option value="4">4</option>
-                              <option value="5">5</option>
-                              <option value="6">6</option>
-                              <option value="7">7</option>
-                              <option value="8">8</option>
-                              <option value="9">9</option>
-                              <option value="10">10</option>
+                              {LINE_POSITION_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                              ))}
                             </select>
                           ) : editingPlayerId === player.id ? (
                             <select
                               className="stat-select"
-                              value={editDraft.attack}
-                              onChange={(event) => setEditDraft((current) => ({ ...current, attack: event.target.value }))}
+                              value={editDraft.linePosition}
+                              onChange={(event) => setEditDraft((current) => ({ ...current, linePosition: event.target.value }))}
+                              disabled={editDraft.role === "goleiro"}
                             >
-                              <option value="1">1</option>
-                              <option value="2">2</option>
-                              <option value="3">3</option>
-                              <option value="4">4</option>
-                              <option value="5">5</option>
-                              <option value="6">6</option>
-                              <option value="7">7</option>
-                              <option value="8">8</option>
-                              <option value="9">9</option>
-                              <option value="10">10</option>
+                              {LINE_POSITION_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                              ))}
+                            </select>
+                          ) : sanitizeRole(player.role) === "goleiro" ? (
+                            "-"
+                          ) : (
+                            sanitizeLinePosition(player.linePosition)
+                          )}
+                        </td>
+                        <td data-label="Vel">
+                          {isBulkEditing ? (
+                            <select
+                              className="stat-select"
+                              value={bulkDrafts[player.id]?.speed || String(DEFAULT_PLAYER_SPEED)}
+                              onChange={(event) => updateBulkDraftField(player.id, "speed", event.target.value)}
+                            >
+                              {RATING_OPTIONS.map((value) => (
+                                <option key={value} value={String(value)}>{value}</option>
+                              ))}
+                            </select>
+                          ) : editingPlayerId === player.id ? (
+                            <select
+                              className="stat-select"
+                              value={editDraft.speed}
+                              onChange={(event) => setEditDraft((current) => ({ ...current, speed: event.target.value }))}
+                            >
+                              {RATING_OPTIONS.map((value) => (
+                                <option key={value} value={String(value)}>{value}</option>
+                              ))}
                             </select>
                           ) : (
-                            sanitizeRating(player.attack, DEFAULT_PLAYER_ATTACK)
+                            sanitizeRating(player.speed, DEFAULT_PLAYER_SPEED)
+                          )}
+                        </td>
+                        <td data-label="Fin">
+                          {isBulkEditing ? (
+                            <select
+                              className="stat-select"
+                              value={bulkDrafts[player.id]?.finishing || String(DEFAULT_PLAYER_FINISHING)}
+                              onChange={(event) => updateBulkDraftField(player.id, "finishing", event.target.value)}
+                            >
+                              {RATING_OPTIONS.map((value) => (
+                                <option key={value} value={String(value)}>{value}</option>
+                              ))}
+                            </select>
+                          ) : editingPlayerId === player.id ? (
+                            <select
+                              className="stat-select"
+                              value={editDraft.finishing}
+                              onChange={(event) => setEditDraft((current) => ({ ...current, finishing: event.target.value }))}
+                            >
+                              {RATING_OPTIONS.map((value) => (
+                                <option key={value} value={String(value)}>{value}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            sanitizeRating(player.finishing, DEFAULT_PLAYER_FINISHING)
                           )}
                         </td>
                         <td data-label="Defesa">
@@ -1400,16 +1664,9 @@ export default function LandingPage() {
                               value={bulkDrafts[player.id]?.defense || String(DEFAULT_PLAYER_DEFENSE)}
                               onChange={(event) => updateBulkDraftField(player.id, "defense", event.target.value)}
                             >
-                              <option value="1">1</option>
-                              <option value="2">2</option>
-                              <option value="3">3</option>
-                              <option value="4">4</option>
-                              <option value="5">5</option>
-                              <option value="6">6</option>
-                              <option value="7">7</option>
-                              <option value="8">8</option>
-                              <option value="9">9</option>
-                              <option value="10">10</option>
+                              {RATING_OPTIONS.map((value) => (
+                                <option key={value} value={String(value)}>{value}</option>
+                              ))}
                             </select>
                           ) : editingPlayerId === player.id ? (
                             <select
@@ -1417,84 +1674,65 @@ export default function LandingPage() {
                               value={editDraft.defense}
                               onChange={(event) => setEditDraft((current) => ({ ...current, defense: event.target.value }))}
                             >
-                              <option value="1">1</option>
-                              <option value="2">2</option>
-                              <option value="3">3</option>
-                              <option value="4">4</option>
-                              <option value="5">5</option>
-                              <option value="6">6</option>
-                              <option value="7">7</option>
-                              <option value="8">8</option>
-                              <option value="9">9</option>
-                              <option value="10">10</option>
+                              {RATING_OPTIONS.map((value) => (
+                                <option key={value} value={String(value)}>{value}</option>
+                              ))}
                             </select>
                           ) : (
                             sanitizeRating(player.defense, DEFAULT_PLAYER_DEFENSE)
                           )}
                         </td>
-                        <td data-label="Gols">
+                        <td data-label="Chute">
                           {isBulkEditing ? (
-                            <input
-                              className="stat-input"
-                              type="number"
-                              min="0"
-                              value={bulkDrafts[player.id]?.goals || "0"}
-                              onChange={(event) => updateBulkDraftField(player.id, "goals", event.target.value)}
-                            />
+                            <select
+                              className="stat-select"
+                              value={bulkDrafts[player.id]?.shooting || String(DEFAULT_PLAYER_SHOOTING)}
+                              onChange={(event) => updateBulkDraftField(player.id, "shooting", event.target.value)}
+                            >
+                              {RATING_OPTIONS.map((value) => (
+                                <option key={value} value={String(value)}>{value}</option>
+                              ))}
+                            </select>
                           ) : editingPlayerId === player.id ? (
-                            <input
-                              className="stat-input"
-                              type="number"
-                              min="0"
-                              value={editDraft.goals}
-                              onChange={(event) => setEditDraft((current) => ({ ...current, goals: event.target.value }))}
-                            />
+                            <select
+                              className="stat-select"
+                              value={editDraft.shooting}
+                              onChange={(event) => setEditDraft((current) => ({ ...current, shooting: event.target.value }))}
+                            >
+                              {RATING_OPTIONS.map((value) => (
+                                <option key={value} value={String(value)}>{value}</option>
+                              ))}
+                            </select>
                           ) : (
-                            player.goals
+                            sanitizeRating(player.shooting, DEFAULT_PLAYER_SHOOTING)
                           )}
                         </td>
-                        <td data-label="Assistencias">
+                        <td data-label="Passe">
                           {isBulkEditing ? (
-                            <input
-                              className="stat-input"
-                              type="number"
-                              min="0"
-                              value={bulkDrafts[player.id]?.assists || "0"}
-                              onChange={(event) => updateBulkDraftField(player.id, "assists", event.target.value)}
-                            />
+                            <select
+                              className="stat-select"
+                              value={bulkDrafts[player.id]?.passing || String(DEFAULT_PLAYER_PASSING)}
+                              onChange={(event) => updateBulkDraftField(player.id, "passing", event.target.value)}
+                            >
+                              {RATING_OPTIONS.map((value) => (
+                                <option key={value} value={String(value)}>{value}</option>
+                              ))}
+                            </select>
                           ) : editingPlayerId === player.id ? (
-                            <input
-                              className="stat-input"
-                              type="number"
-                              min="0"
-                              value={editDraft.assists}
-                              onChange={(event) => setEditDraft((current) => ({ ...current, assists: event.target.value }))}
-                            />
+                            <select
+                              className="stat-select"
+                              value={editDraft.passing}
+                              onChange={(event) => setEditDraft((current) => ({ ...current, passing: event.target.value }))}
+                            >
+                              {RATING_OPTIONS.map((value) => (
+                                <option key={value} value={String(value)}>{value}</option>
+                              ))}
+                            </select>
                           ) : (
-                            player.assists
+                            sanitizeRating(player.passing, DEFAULT_PLAYER_PASSING)
                           )}
                         </td>
-                        <td data-label="Titulos">
-                          {isBulkEditing ? (
-                            <input
-                              className="stat-input"
-                              type="number"
-                              min="0"
-                              value={bulkDrafts[player.id]?.championships || "0"}
-                              onChange={(event) => updateBulkDraftField(player.id, "championships", event.target.value)}
-                            />
-                          ) : editingPlayerId === player.id ? (
-                            <input
-                              className="stat-input"
-                              type="number"
-                              min="0"
-                              value={editDraft.championships}
-                              onChange={(event) => setEditDraft((current) => ({ ...current, championships: event.target.value }))}
-                            />
-                          ) : (
-                            renderTrophies(player.championships)
-                          )}
-                        </td>
+                        <td data-label="OVR">{getHiddenLevelScore(player).toFixed(1)}</td>
                         <td data-label="Acoes">
                           {isBulkEditing ? (
                             <span className="sync-note">Edicao em massa</span>
@@ -1514,11 +1752,85 @@ export default function LandingPage() {
                     ))}
                     {!displayedPlayers.length && (
                       <tr>
-                        <td colSpan="8">Nenhum jogador encontrado.</td>
+                        <td colSpan="10">Nenhum jogador encontrado.</td>
                       </tr>
                     )}
                   </tbody>
                 </table>
+              </div>
+
+              {/* Tabela de estatísticas rápidas */}
+              <div className="stats-table-section">
+                <h3>Estatísticas da temporada</h3>
+                <div className="stats-table-controls">
+                  <input
+                    className="search-input"
+                    type="text"
+                    value={statsSearchTerm}
+                    onChange={(event) => setStatsSearchTerm(event.target.value)}
+                    placeholder="Pesquisar jogador..."
+                  />
+                  <select value={statsSortBy} onChange={(event) => setStatsSortBy(event.target.value)} className="sort-select">
+                    <option value="goals">Gols</option>
+                    <option value="assists">Assistências</option>
+                    <option value="championships">Títulos</option>
+                    <option value="name">Nome</option>
+                  </select>
+                  <button
+                    type="button"
+                    className="sort-toggle"
+                    onClick={() => setStatsSortDirection((current) => (current === "asc" ? "desc" : "asc"))}
+                  >
+                    {statsSortDirection === "asc" ? "Crescente" : "Decrescente"}
+                  </button>
+                </div>
+                <div className="players-scroll">
+                  <table className="simple-table stats-season-table">
+                    <thead>
+                      <tr>
+                        <th className="col-player">Jogador</th>
+                        <th className="col-stat">⚽ Gols</th>
+                        <th className="col-stat">🅰️ Assist.</th>
+                        <th className="col-stat">🏆 Títulos</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...consolidatedPlayers]
+                        .filter((p) => !statsSearchTerm.trim() || p.name.toLowerCase().includes(statsSearchTerm.trim().toLowerCase()))
+                        .sort((a, b) => {
+                          const dir = statsSortDirection === "asc" ? 1 : -1;
+                          if (statsSortBy === "name") return dir * a.name.localeCompare(b.name, "pt-BR");
+                          return dir * ((a[statsSortBy] || 0) - (b[statsSortBy] || 0)) || a.name.localeCompare(b.name, "pt-BR");
+                        })
+                        .map((player) => (
+                          <tr key={player.id}>
+                            <td data-label="Jogador" className="col-player">{player.name}</td>
+                            <td data-label="Gols" className="col-stat">
+                              <div className="quick-stat-cell">
+                                <button type="button" className="quick-stat-btn sub" title="Remover gol" disabled={isMutating || !player.goals} onClick={() => handleQuickStat(player.id, "goals", -1)}>−</button>
+                                <span className="quick-stat-value">{player.goals}</span>
+                                <button type="button" className="quick-stat-btn" title="Marcar gol" disabled={isMutating} onClick={() => handleQuickStat(player.id, "goals")}>+⚽</button>
+                              </div>
+                            </td>
+                            <td data-label="Assist." className="col-stat">
+                              <div className="quick-stat-cell">
+                                <button type="button" className="quick-stat-btn sub" title="Remover assistencia" disabled={isMutating || !player.assists} onClick={() => handleQuickStat(player.id, "assists", -1)}>−</button>
+                                <span className="quick-stat-value">{player.assists}</span>
+                                <button type="button" className="quick-stat-btn" title="Marcar assistencia" disabled={isMutating} onClick={() => handleQuickStat(player.id, "assists")}>+🅰️</button>
+                              </div>
+                            </td>
+                            <td data-label="Títulos" className="col-stat">
+                              <div className="quick-stat-cell">
+                                <button type="button" className="quick-stat-btn sub" title="Remover titulo" disabled={isMutating || !player.championships} onClick={() => handleQuickStat(player.id, "championships", -1)}>−</button>
+                                <span className="quick-stat-value">{renderTrophies(player.championships)}</span>
+                                <button type="button" className="quick-stat-btn" title="Marcar titulo" disabled={isMutating} onClick={() => handleQuickStat(player.id, "championships")}>+🏆</button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </div>
