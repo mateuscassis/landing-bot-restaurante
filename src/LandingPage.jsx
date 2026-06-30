@@ -14,6 +14,10 @@ const DEFAULT_PLAYER_SHOOTING = 5;
 const DEFAULT_PLAYER_PASSING = 5;
 const DEFAULT_PLAYER_LINE_POSITION = "meio";
 const TEAM_SIZE = 4;
+const PAIR_HISTORY_DECAY = 0.95;
+const PAIR_HISTORY_INCREMENT = 2;
+const PAIR_REPEAT_WEIGHT = 8;
+const POSITION_PRIORITY_WEIGHT = 0.1;
 const RATING_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 const LINE_POSITION_OPTIONS = [
@@ -189,10 +193,23 @@ function getPairRepeatCount(teamPlayers, incomingPlayer, pairHistory) {
   }, 0);
 }
 
+function computeTeamRepeatPenalty(teamPlayers, pairHistory) {
+  let penalty = 0;
+
+  for (let i = 0; i < teamPlayers.length; i += 1) {
+    for (let j = i + 1; j < teamPlayers.length; j += 1) {
+      const pairKey = createPairKey(teamPlayers[i].id, teamPlayers[j].id);
+      penalty += pairHistory[pairKey] || 0;
+    }
+  }
+
+  return penalty;
+}
+
 function updatePairHistoryWithTeams(currentHistory, teams) {
   const nextHistory = Object.fromEntries(
     Object.entries(currentHistory)
-      .map(([key, value]) => [key, value * 0.9])
+      .map(([key, value]) => [key, value * PAIR_HISTORY_DECAY])
       .filter(([, value]) => value >= 0.05)
   );
 
@@ -200,7 +217,7 @@ function updatePairHistoryWithTeams(currentHistory, teams) {
     for (let i = 0; i < team.players.length; i += 1) {
       for (let j = i + 1; j < team.players.length; j += 1) {
         const pairKey = createPairKey(team.players[i].id, team.players[j].id);
-        nextHistory[pairKey] = (nextHistory[pairKey] || 0) + 1;
+        nextHistory[pairKey] = (nextHistory[pairKey] || 0) + PAIR_HISTORY_INCREMENT;
       }
     }
   });
@@ -252,6 +269,7 @@ function buildBalancedTeams(players, teamsCount, randomSeed, pairHistory = {}) {
   };
 
   const playersForTeams = players.slice(0, teamsCount * TEAM_SIZE);
+  const targetAverage = playersForTeams.reduce((sum, player) => sum + getHiddenLevelScore(player), 0) / teamsCount;
 
   const teams = Array.from({ length: teamsCount }, (_, index) => ({
     id: index + 1,
@@ -266,19 +284,31 @@ function buildBalancedTeams(players, teamsCount, randomSeed, pairHistory = {}) {
     return diff !== 0 ? diff : seededRandom(a.id) - seededRandom(b.id);
   });
 
-  // Snake draft: distributes strong players evenly across teams as starting point
-  let snakeDir = 1;
-  let snakeTi = 0;
   for (const player of sorted) {
-    teams[snakeTi].players.push(player);
-    teams[snakeTi].totalAverage += getHiddenLevelScore(player);
-    if (snakeDir === 1) {
-      if (snakeTi === teamsCount - 1) snakeDir = -1;
-      else snakeTi += 1;
-    } else {
-      if (snakeTi === 0) snakeDir = 1;
-      else snakeTi -= 1;
+    const playerScore = getHiddenLevelScore(player);
+    let bestTeamIndex = 0;
+    let bestTeamScore = Infinity;
+
+    for (let teamIndex = 0; teamIndex < teams.length; teamIndex += 1) {
+      const team = teams[teamIndex];
+      if (team.players.length >= TEAM_SIZE) {
+        continue;
+      }
+
+      const projectedAverage = team.totalAverage + playerScore;
+      const repeatPenalty = getPairRepeatCount(team.players, player, pairHistory) * PAIR_REPEAT_WEIGHT;
+      const balancePenalty = Math.abs(projectedAverage - targetAverage);
+      const tieBreaker = seededRandom(team.id + player.id) * 0.001;
+      const placementScore = balancePenalty + repeatPenalty + tieBreaker;
+
+      if (placementScore < bestTeamScore) {
+        bestTeamScore = placementScore;
+        bestTeamIndex = teamIndex;
+      }
     }
+
+    teams[bestTeamIndex].players.push(player);
+    teams[bestTeamIndex].totalAverage += playerScore;
   }
 
   // Compute sum of squared deviations from mean (variance proxy) — lower is better
@@ -298,7 +328,7 @@ function buildBalancedTeams(players, teamsCount, randomSeed, pairHistory = {}) {
     }, 0);
   }
 
-  // Phase 1 — OVR variance optimization: accept swaps that reduce OVR variance
+  // Phase 1 — OVR variance optimization while keeping repeated pairs in check
   let improved = true;
   while (improved) {
     improved = false;
@@ -312,13 +342,19 @@ function buildBalancedTeams(players, teamsCount, randomSeed, pairHistory = {}) {
             const s2 = getHiddenLevelScore(p2);
 
             const prevVariance = computeVariance();
+            const prevRepeats = computeTeamRepeatPenalty(teams[t1].players, pairHistory) + computeTeamRepeatPenalty(teams[t2].players, pairHistory);
 
             teams[t1].players[i] = p2;
             teams[t2].players[j] = p1;
             teams[t1].totalAverage += s2 - s1;
             teams[t2].totalAverage += s1 - s2;
 
-            if (computeVariance() < prevVariance - 0.0001) {
+            const newVariance = computeVariance();
+            const newRepeats = computeTeamRepeatPenalty(teams[t1].players, pairHistory) + computeTeamRepeatPenalty(teams[t2].players, pairHistory);
+            const prevScore = prevVariance + prevRepeats * 0.75;
+            const newScore = newVariance + newRepeats * 0.75;
+
+            if (newScore < prevScore - 0.0001) {
               improved = true;
             } else {
               teams[t1].players[i] = p1;
@@ -332,9 +368,7 @@ function buildBalancedTeams(players, teamsCount, randomSeed, pairHistory = {}) {
     }
   }
 
-  // Phase 2 — Position balance: accept swaps that improve position distribution
-  // without worsening OVR variance beyond a small tolerance
-  const ovrTolerance = 0.05;
+  // Phase 2 — Keep overall balance as the main goal; positions are secondary
   let posImproved = true;
   while (posImproved) {
     posImproved = false;
@@ -349,6 +383,7 @@ function buildBalancedTeams(players, teamsCount, randomSeed, pairHistory = {}) {
 
             const prevVariance = computeVariance();
             const prevPos = computePositionImbalance();
+            const prevRepeats = computeTeamRepeatPenalty(teams[t1].players, pairHistory) + computeTeamRepeatPenalty(teams[t2].players, pairHistory);
 
             teams[t1].players[i] = p2;
             teams[t2].players[j] = p1;
@@ -357,8 +392,11 @@ function buildBalancedTeams(players, teamsCount, randomSeed, pairHistory = {}) {
 
             const newVariance = computeVariance();
             const newPos = computePositionImbalance();
+            const newRepeats = computeTeamRepeatPenalty(teams[t1].players, pairHistory) + computeTeamRepeatPenalty(teams[t2].players, pairHistory);
+            const prevScore = (prevVariance * 5) + prevRepeats + (prevPos * POSITION_PRIORITY_WEIGHT);
+            const newScore = (newVariance * 5) + newRepeats + (newPos * POSITION_PRIORITY_WEIGHT);
 
-            if (newPos < prevPos && newVariance <= prevVariance + ovrTolerance) {
+            if (newScore < prevScore - 0.0001) {
               posImproved = true;
             } else {
               teams[t1].players[i] = p1;
@@ -372,7 +410,7 @@ function buildBalancedTeams(players, teamsCount, randomSeed, pairHistory = {}) {
     }
   }
 
-  // Phase 3 — Pair history: reduce repeated pairs without worsening OVR or position balance
+  // Phase 3 — Pair history: still keep overall balance above position perfection
   const tolerance = 0.0001;
   let pairImproved = true;
   while (pairImproved) {
@@ -388,17 +426,7 @@ function buildBalancedTeams(players, teamsCount, randomSeed, pairHistory = {}) {
 
             const prevVariance = computeVariance();
             const prevPos = computePositionImbalance();
-
-            const countRepeatPairs = (team) =>
-              team.players.reduce((acc, player, pi) => {
-                for (let qi = pi + 1; qi < team.players.length; qi += 1) {
-                  const key = createPairKey(player.id, team.players[qi].id);
-                  acc += pairHistory[key] || 0;
-                }
-                return acc;
-              }, 0);
-
-            const prevRepeats = countRepeatPairs(teams[t1]) + countRepeatPairs(teams[t2]);
+            const prevRepeats = computeTeamRepeatPenalty(teams[t1].players, pairHistory) + computeTeamRepeatPenalty(teams[t2].players, pairHistory);
 
             teams[t1].players[i] = p2;
             teams[t2].players[j] = p1;
@@ -407,9 +435,11 @@ function buildBalancedTeams(players, teamsCount, randomSeed, pairHistory = {}) {
 
             const newVariance = computeVariance();
             const newPos = computePositionImbalance();
-            const newRepeats = countRepeatPairs(teams[t1]) + countRepeatPairs(teams[t2]);
+            const newRepeats = computeTeamRepeatPenalty(teams[t1].players, pairHistory) + computeTeamRepeatPenalty(teams[t2].players, pairHistory);
+            const prevScore = (prevVariance * 5) + (prevRepeats * PAIR_REPEAT_WEIGHT) + (prevPos * POSITION_PRIORITY_WEIGHT);
+            const newScore = (newVariance * 5) + (newRepeats * PAIR_REPEAT_WEIGHT) + (newPos * POSITION_PRIORITY_WEIGHT);
 
-            if (newRepeats < prevRepeats && newVariance <= prevVariance + tolerance && newPos <= prevPos) {
+            if (newScore < prevScore - tolerance) {
               pairImproved = true;
             } else {
               teams[t1].players[i] = p1;
@@ -826,7 +856,7 @@ export default function LandingPage() {
       lines.push("");
     }
 
-    lines.push("Time com goleiro dedicado recebe linha um pouco mais leve para compensar revezamento dos sem goleiro.");
+    lines.push("Observacao: goleiros sao fixos e nao entram no sorteio das linhas.");
 
     const message = encodeURIComponent(lines.join("\n"));
     window.open(`https://wa.me/?text=${message}`, "_blank", "noopener,noreferrer");
@@ -1313,8 +1343,8 @@ export default function LandingPage() {
             <p className="section-eyebrow">Times equilibrados</p>
             <h2>Montagem automatica por overall</h2>
             <p className="sync-note">Overall: media de velocidade, finalizacao, defesa, chute e passe.</p>
-            <p className="sync-note">Formacao base por time: 1 defesa, 2 meio, 1 ataque e 1 vaga extra (preferindo goleiro).</p>
-            <p className="sync-note">Quando o time tem goleiro dedicado, o algoritmo reduz um pouco a media de linha para compensar.</p>
+            <p className="sync-note">Goleiros sao fixos e ficam fora do sorteio das linhas.</p>
+            <p className="sync-note">O algoritmo prioriza o balanceamento do overall; posicoes ficam em segundo plano.</p>
           </div>
 
           <div className="weekly-selection">
