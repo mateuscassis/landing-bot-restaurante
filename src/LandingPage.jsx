@@ -1163,6 +1163,7 @@ export default function LandingPage() {
               ["campeoes", "Campeoes"],
               ["times", "Times"],
               ["cadastro", "Cadastro"],
+              ["atualizacao-rapida", "Atualizacao rapida"],
             ].map(([id, label]) => (
               <button key={id} onClick={() => scrollTo(id)} className="nav-link-btn">
                 {label}
@@ -1178,6 +1179,16 @@ export default function LandingPage() {
           </button>
         </div>
       </nav>
+
+      <button
+        type="button"
+        className="mobile-quick-stats-btn"
+        onClick={() => scrollTo("atualizacao-rapida")}
+        aria-label="Ir para atualizacao rapida de estatisticas"
+      >
+        <Zap size={16} />
+        Atualizar gols, assistencias e titulos
+      </button>
 
       <section id="hero" className="hero-section">
         <div className="hero-noise" />
@@ -1797,7 +1808,7 @@ export default function LandingPage() {
               </div>
 
               {/* Tabela de estatísticas rápidas */}
-              <div className="stats-table-section">
+              <div id="atualizacao-rapida" className="stats-table-section">
                 <h3>Estatísticas da temporada</h3>
                 <div className="stats-table-controls">
                   <input

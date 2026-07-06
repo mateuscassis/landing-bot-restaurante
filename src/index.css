@@ -193,6 +193,10 @@ p {
   cursor: pointer;
 }
 
+.mobile-quick-stats-btn {
+  display: none;
+}
+
 .league-nav.scrolled .nav-hamburger {
   color: var(--brand-dark);
 }
@@ -1509,6 +1513,29 @@ p {
 
   .btn-nav {
     width: 100%;
+  }
+
+  .mobile-quick-stats-btn {
+    position: fixed;
+    right: 12px;
+    bottom: 12px;
+    z-index: 45;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid #c89820;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #f5c842, #e8a820);
+    color: #1d1d1d;
+    font-weight: 800;
+    font-size: 0.78rem;
+    padding: 10px 12px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+    touch-action: manipulation;
+  }
+
+  .mobile-quick-stats-btn:active {
+    transform: translateY(1px);
   }
 
   .hero-section {
