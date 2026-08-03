@@ -10,7 +10,6 @@ const DEFAULT_PLAYER_ROLE = "linha";
 const DEFAULT_PLAYER_SPEED = 5;
 const DEFAULT_PLAYER_FINISHING = 5;
 const DEFAULT_PLAYER_DEFENSE = 5;
-const DEFAULT_PLAYER_SHOOTING = 5;
 const DEFAULT_PLAYER_PASSING = 5;
 const DEFAULT_PLAYER_LINE_POSITION = "meio";
 const TEAM_SIZE = 4;
@@ -70,7 +69,6 @@ function sanitizePlayers(players) {
         speed: sanitizeRating(player.speed ?? legacyAttack, DEFAULT_PLAYER_SPEED),
         finishing: sanitizeRating(player.finishing ?? legacyAttack, DEFAULT_PLAYER_FINISHING),
         defense: sanitizeRating(player.defense ?? legacyDefense, DEFAULT_PLAYER_DEFENSE),
-        shooting: sanitizeRating(player.shooting ?? legacyAttack, DEFAULT_PLAYER_SHOOTING),
         passing: sanitizeRating(player.passing ?? (legacyAttack + legacyDefense) / 2, DEFAULT_PLAYER_PASSING),
         linePosition: sanitizeLinePosition(player.linePosition ?? player.position),
         role: sanitizeRole(player.role),
@@ -94,7 +92,6 @@ function sanitizePlayers(players) {
     existing.speed = Math.max(existing.speed, player.speed);
     existing.finishing = Math.max(existing.finishing, player.finishing);
     existing.defense = Math.max(existing.defense, player.defense);
-    existing.shooting = Math.max(existing.shooting, player.shooting);
     existing.passing = Math.max(existing.passing, player.passing);
     existing.role = existing.role === "goleiro" || player.role === "goleiro" ? "goleiro" : DEFAULT_PLAYER_ROLE;
     if (existing.role !== "goleiro") {
@@ -225,13 +222,42 @@ function updatePairHistoryWithTeams(currentHistory, teams) {
   return nextHistory;
 }
 
+function getOverallWeights(player) {
+  // OVR uses finishing for attacking quality.
+  if (sanitizeRole(player.role) === "goleiro") {
+    // Goalkeeper: defense (reflexes/positioning) + speed dominant
+    return { speed: 0.24, finishing: 0.10, defense: 0.52, passing: 0.14 };
+  }
+
+  const linePosition = sanitizeLinePosition(player.linePosition);
+
+  if (linePosition === "ataque") {
+    // Striker: finishing + speed dominant; passing as secondary value
+    return { speed: 0.30, finishing: 0.55, defense: 0.00, passing: 0.15 };
+  }
+
+  if (linePosition === "defesa") {
+    // Defender: defense + speed dominant
+    return { speed: 0.32, finishing: 0.07, defense: 0.48, passing: 0.13 };
+  }
+
+  // Midfielder: passing + speed dominant; finishing adds secondary value
+  return { speed: 0.30, finishing: 0.26, defense: 0.06, passing: 0.38 };
+}
+
 function getHiddenLevelScore(player) {
   const speed = sanitizeRating(player.speed, DEFAULT_PLAYER_SPEED);
   const finishing = sanitizeRating(player.finishing, DEFAULT_PLAYER_FINISHING);
   const defense = sanitizeRating(player.defense, DEFAULT_PLAYER_DEFENSE);
   const passing = sanitizeRating(player.passing, DEFAULT_PLAYER_PASSING);
+  const weights = getOverallWeights(player);
 
-  return (speed + finishing + defense + passing) / 4;
+  return (
+    (speed * weights.speed)
+    + (finishing * weights.finishing)
+    + (defense * weights.defense)
+    + (passing * weights.passing)
+  );
 }
 
 function displayOVR(player) {
@@ -499,7 +525,6 @@ export default function LandingPage() {
     speed: String(DEFAULT_PLAYER_SPEED),
     finishing: String(DEFAULT_PLAYER_FINISHING),
     defense: String(DEFAULT_PLAYER_DEFENSE),
-    shooting: String(DEFAULT_PLAYER_SHOOTING),
     passing: String(DEFAULT_PLAYER_PASSING),
     linePosition: DEFAULT_PLAYER_LINE_POSITION,
     role: DEFAULT_PLAYER_ROLE,
@@ -525,7 +550,6 @@ export default function LandingPage() {
     speed: String(DEFAULT_PLAYER_SPEED),
     finishing: String(DEFAULT_PLAYER_FINISHING),
     defense: String(DEFAULT_PLAYER_DEFENSE),
-    shooting: String(DEFAULT_PLAYER_SHOOTING),
     passing: String(DEFAULT_PLAYER_PASSING),
     linePosition: DEFAULT_PLAYER_LINE_POSITION,
     role: DEFAULT_PLAYER_ROLE,
@@ -655,7 +679,6 @@ export default function LandingPage() {
         current.speed = Math.max(current.speed, sanitizeRating(player.speed, DEFAULT_PLAYER_SPEED));
         current.finishing = Math.max(current.finishing, sanitizeRating(player.finishing, DEFAULT_PLAYER_FINISHING));
         current.defense = Math.max(current.defense, sanitizeRating(player.defense, DEFAULT_PLAYER_DEFENSE));
-        current.shooting = Math.max(current.shooting, sanitizeRating(player.shooting, DEFAULT_PLAYER_SHOOTING));
         current.passing = Math.max(current.passing, sanitizeRating(player.passing, DEFAULT_PLAYER_PASSING));
         if (sanitizeRole(current.role) !== "goleiro") {
           current.linePosition = sanitizeLinePosition(player.linePosition);
@@ -671,7 +694,6 @@ export default function LandingPage() {
         speed: sanitizeRating(player.speed, DEFAULT_PLAYER_SPEED),
         finishing: sanitizeRating(player.finishing, DEFAULT_PLAYER_FINISHING),
         defense: sanitizeRating(player.defense, DEFAULT_PLAYER_DEFENSE),
-        shooting: sanitizeRating(player.shooting, DEFAULT_PLAYER_SHOOTING),
         passing: sanitizeRating(player.passing, DEFAULT_PLAYER_PASSING),
         linePosition: sanitizeLinePosition(player.linePosition),
         role: sanitizeRole(player.role),
@@ -754,9 +776,6 @@ export default function LandingPage() {
       }
       if (sortBy === "defense") {
         return sanitizeRating(a.defense, DEFAULT_PLAYER_DEFENSE) - sanitizeRating(b.defense, DEFAULT_PLAYER_DEFENSE);
-      }
-      if (sortBy === "shooting") {
-        return sanitizeRating(a.shooting, DEFAULT_PLAYER_SHOOTING) - sanitizeRating(b.shooting, DEFAULT_PLAYER_SHOOTING);
       }
       if (sortBy === "passing") {
         return sanitizeRating(a.passing, DEFAULT_PLAYER_PASSING) - sanitizeRating(b.passing, DEFAULT_PLAYER_PASSING);
@@ -871,7 +890,6 @@ export default function LandingPage() {
     const speed = sanitizeRating(formData.speed, DEFAULT_PLAYER_SPEED);
     const finishing = sanitizeRating(formData.finishing, DEFAULT_PLAYER_FINISHING);
     const defense = sanitizeRating(formData.defense, DEFAULT_PLAYER_DEFENSE);
-    const shooting = sanitizeRating(formData.shooting, DEFAULT_PLAYER_SHOOTING);
     const passing = sanitizeRating(formData.passing, DEFAULT_PLAYER_PASSING);
     const linePosition = sanitizeLinePosition(formData.linePosition);
     const role = sanitizeRole(formData.role);
@@ -897,7 +915,6 @@ export default function LandingPage() {
               speed,
               finishing,
               defense,
-              shooting,
               passing,
               linePosition,
               role,
@@ -915,7 +932,6 @@ export default function LandingPage() {
           speed,
           finishing,
           defense,
-          shooting,
           passing,
           linePosition,
           role,
@@ -935,7 +951,6 @@ export default function LandingPage() {
       speed: String(DEFAULT_PLAYER_SPEED),
       finishing: String(DEFAULT_PLAYER_FINISHING),
       defense: String(DEFAULT_PLAYER_DEFENSE),
-      shooting: String(DEFAULT_PLAYER_SHOOTING),
       passing: String(DEFAULT_PLAYER_PASSING),
       linePosition: DEFAULT_PLAYER_LINE_POSITION,
       role: DEFAULT_PLAYER_ROLE,
@@ -951,7 +966,6 @@ export default function LandingPage() {
       speed: String(sanitizeRating(player.speed, DEFAULT_PLAYER_SPEED)),
       finishing: String(sanitizeRating(player.finishing, DEFAULT_PLAYER_FINISHING)),
       defense: String(sanitizeRating(player.defense, DEFAULT_PLAYER_DEFENSE)),
-      shooting: String(sanitizeRating(player.shooting, DEFAULT_PLAYER_SHOOTING)),
       passing: String(sanitizeRating(player.passing, DEFAULT_PLAYER_PASSING)),
       linePosition: sanitizeLinePosition(player.linePosition),
       role: sanitizeRole(player.role),
@@ -1003,7 +1017,6 @@ export default function LandingPage() {
         speed: sanitizeRating(draft.speed, DEFAULT_PLAYER_SPEED),
         finishing: sanitizeRating(draft.finishing, DEFAULT_PLAYER_FINISHING),
         defense: sanitizeRating(draft.defense, DEFAULT_PLAYER_DEFENSE),
-        shooting: sanitizeRating(draft.shooting, DEFAULT_PLAYER_SHOOTING),
         passing: sanitizeRating(draft.passing, DEFAULT_PLAYER_PASSING),
         linePosition: sanitizeLinePosition(draft.linePosition),
         role: sanitizeRole(draft.role),
@@ -1029,7 +1042,6 @@ export default function LandingPage() {
       speed: String(sanitizeRating(player.speed, DEFAULT_PLAYER_SPEED)),
       finishing: String(sanitizeRating(player.finishing, DEFAULT_PLAYER_FINISHING)),
       defense: String(sanitizeRating(player.defense, DEFAULT_PLAYER_DEFENSE)),
-      shooting: String(sanitizeRating(player.shooting, DEFAULT_PLAYER_SHOOTING)),
       passing: String(sanitizeRating(player.passing, DEFAULT_PLAYER_PASSING)),
       linePosition: sanitizeLinePosition(player.linePosition),
       role: sanitizeRole(player.role),
@@ -1046,7 +1058,6 @@ export default function LandingPage() {
       speed: String(DEFAULT_PLAYER_SPEED),
       finishing: String(DEFAULT_PLAYER_FINISHING),
       defense: String(DEFAULT_PLAYER_DEFENSE),
-      shooting: String(DEFAULT_PLAYER_SHOOTING),
       passing: String(DEFAULT_PLAYER_PASSING),
       linePosition: DEFAULT_PLAYER_LINE_POSITION,
       role: DEFAULT_PLAYER_ROLE,
@@ -1061,7 +1072,6 @@ export default function LandingPage() {
     const speed = sanitizeRating(editDraft.speed, DEFAULT_PLAYER_SPEED);
     const finishing = sanitizeRating(editDraft.finishing, DEFAULT_PLAYER_FINISHING);
     const defense = sanitizeRating(editDraft.defense, DEFAULT_PLAYER_DEFENSE);
-    const shooting = sanitizeRating(editDraft.shooting, DEFAULT_PLAYER_SHOOTING);
     const passing = sanitizeRating(editDraft.passing, DEFAULT_PLAYER_PASSING);
     const linePosition = sanitizeLinePosition(editDraft.linePosition);
     const role = sanitizeRole(editDraft.role);
@@ -1077,7 +1087,6 @@ export default function LandingPage() {
             speed,
             finishing,
             defense,
-            shooting,
             passing,
             linePosition,
             role,
@@ -1353,7 +1362,7 @@ export default function LandingPage() {
           <div className="section-header">
             <p className="section-eyebrow">Times equilibrados</p>
             <h2>Montagem automatica por overall</h2>
-            <p className="sync-note">Overall: media de velocidade, finalizacao, defesa, chute e passe.</p>
+            <p className="sync-note">Overall ponderado por posicao: ataque prioriza finalizacao e velocidade, meio prioriza passe e velocidade, defesa prioriza defesa e velocidade.</p>
             <p className="sync-note">Goleiros sao fixos e ficam fora do sorteio das linhas.</p>
             <p className="sync-note">O algoritmo prioriza o balanceamento do overall; posicoes ficam em segundo plano.</p>
           </div>

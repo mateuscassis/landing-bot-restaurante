@@ -1,4 +1,4 @@
-# Google Sheets Setup
+﻿# Google Sheets Setup
 
 ## 1) Criar planilha e script
 1. Crie uma planilha no Google Sheets.
@@ -40,5 +40,21 @@ VITE_SHEETS_API_URL=COLE_AQUI_A_URL_DO_WEB_APP
 - Registros antigos sem funcao sao tratados como `linha` automaticamente.
 
 ## Observacao
-- Sem autenticação de usuario, qualquer pessoa com acesso ao site pode editar.
+- Sem autenticaÃ§Ã£o de usuario, qualquer pessoa com acesso ao site pode editar.
 - Em edicoes simultaneas, vale a ultima gravacao (last write wins).
+
+## WhatsApp webhook (opcional)
+1. Configure o Apps Script atualizado deste repositorio e publique novamente o Web App.
+2. (Opcional, recomendado) No Apps Script, defina a propriedade de script `WEBHOOK_SECRET` em `Project Settings > Script properties`.
+3. No servidor webhook, configure as variaveis de ambiente:
+
+```
+WHATSAPP_VERIFY_TOKEN=fut_terca_token_123
+SHEETS_API_URL=URL_DO_SEU_WEB_APP_DO_APPS_SCRIPT
+SHEETS_WEBHOOK_SECRET=mesmo_valor_da_WEBHOOK_SECRET\nWHATSAPP_PHONE_NUMBER_ID=SEU_PHONE_NUMBER_ID\nWHATSAPP_ACCESS_TOKEN=SEU_ACCESS_TOKEN
+```
+
+4. Formato de mensagem aceito no WhatsApp:
+   - `gol NomeDoJogador`
+   - `gol NomeDoJogador assist NomeDoAssistente`
+

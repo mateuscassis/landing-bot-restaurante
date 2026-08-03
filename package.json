@@ -3,7 +3,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "webhook:whatsapp": "node whatsapp-webhook.js"
   },
   "name": "landing-bot-restaurante",
   "version": "1.0.0",
@@ -12,6 +13,7 @@
   "dependencies": {
     "autoprefixer": "^10.4.21",
     "bootstrap": "^5.3.8",
+    "express": "^5.2.1",
     "lucide-react": "^0.544.0",
     "postcss": "^8.5.6",
     "react": "^19.1.1",
