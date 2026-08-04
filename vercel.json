@@ -1,0 +1,16 @@
+{
+  "rewrites": [
+    {
+      "source": "/webhook",
+      "destination": "/api/webhook"
+    },
+    {
+      "source": "/webhook/:eventName",
+      "destination": "/api/webhook/:eventName"
+    },
+    {
+      "source": "/health",
+      "destination": "/api/health"
+    }
+  ]
+}

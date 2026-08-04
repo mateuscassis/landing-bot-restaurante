@@ -46,15 +46,40 @@ VITE_SHEETS_API_URL=COLE_AQUI_A_URL_DO_WEB_APP
 ## WhatsApp webhook (opcional)
 1. Configure o Apps Script atualizado deste repositorio e publique novamente o Web App.
 2. (Opcional, recomendado) No Apps Script, defina a propriedade de script `WEBHOOK_SECRET` em `Project Settings > Script properties`.
-3. No servidor webhook, configure as variaveis de ambiente:
+3. No servidor webhook, configure as variaveis de ambiente.
+
+### Opcao 1: Meta Cloud API
 
 ```
 WHATSAPP_VERIFY_TOKEN=fut_terca_token_123
 SHEETS_API_URL=URL_DO_SEU_WEB_APP_DO_APPS_SCRIPT
-SHEETS_WEBHOOK_SECRET=mesmo_valor_da_WEBHOOK_SECRET\nWHATSAPP_PHONE_NUMBER_ID=SEU_PHONE_NUMBER_ID\nWHATSAPP_ACCESS_TOKEN=SEU_ACCESS_TOKEN
+SHEETS_WEBHOOK_SECRET=mesmo_valor_da_WEBHOOK_SECRET
+WHATSAPP_PHONE_NUMBER_ID=SEU_PHONE_NUMBER_ID
+WHATSAPP_ACCESS_TOKEN=SEU_ACCESS_TOKEN
 ```
 
-4. Formato de mensagem aceito no WhatsApp:
+### Opcao 2: Evolution API
+
+```
+WHATSAPP_VERIFY_TOKEN=fut_terca_token_123
+SHEETS_API_URL=URL_DO_SEU_WEB_APP_DO_APPS_SCRIPT
+SHEETS_WEBHOOK_SECRET=mesmo_valor_da_WEBHOOK_SECRET
+EVOLUTION_API_URL=http://SEU_HOST_DA_EVOLUTION:8080
+EVOLUTION_API_KEY=SUA_API_KEY
+EVOLUTION_INSTANCE_NAME=NOME_DA_INSTANCIA
+```
+
+4. Na Evolution API, aponte o webhook para uma destas rotas:
+   - `https://seu-servidor/webhook` com o evento `MESSAGES_UPSERT`
+   - `https://seu-servidor/webhook/messages-upsert` se `webhook_by_events=true`
+
+5. Formato de mensagem aceito no WhatsApp:
    - `gol NomeDoJogador`
    - `gol NomeDoJogador assist NomeDoAssistente`
+
+6. Para subir o listener localmente:
+
+```
+npm run webhook:whatsapp
+```
 
