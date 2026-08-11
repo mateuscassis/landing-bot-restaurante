@@ -16,7 +16,9 @@ const TEAM_SIZE = 4;
 const PAIR_HISTORY_DECAY = 0.95;
 const PAIR_HISTORY_INCREMENT = 2;
 const PAIR_REPEAT_WEIGHT = 8;
-const POSITION_PRIORITY_WEIGHT = 0.1;
+// Max allowed regression in balance deviation to let position/pair fixes happen — keeps nota as top priority.
+const POSITION_FIX_TOLERANCE = 1;
+const PAIR_FIX_TOLERANCE = 0.5;
 const RATING_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 const LINE_POSITION_OPTIONS = [
@@ -354,6 +356,11 @@ function buildBalancedTeams(players, teamsCount, randomSeed, pairHistory = {}) {
     }, 0);
   }
 
+  // Sum of absolute deviations from the target average — keeps nota balance as the top priority.
+  function computeBalanceDeviation() {
+    return teams.reduce((s, t) => s + Math.abs(t.totalAverage - targetAverage), 0);
+  }
+
   // Phase 1 — OVR variance optimization while keeping repeated pairs in check
   let improved = true;
   while (improved) {
@@ -394,7 +401,7 @@ function buildBalancedTeams(players, teamsCount, randomSeed, pairHistory = {}) {
     }
   }
 
-  // Phase 2 — Keep overall balance as the main goal; positions are secondary
+  // Phase 2 — Fix position quotas (1 defesa, 2 meio, 1 ataque) without hurting nota balance beyond tolerance
   let posImproved = true;
   while (posImproved) {
     posImproved = false;
@@ -407,22 +414,22 @@ function buildBalancedTeams(players, teamsCount, randomSeed, pairHistory = {}) {
             const s1 = getHiddenLevelScore(p1);
             const s2 = getHiddenLevelScore(p2);
 
-            const prevVariance = computeVariance();
+            const prevDeviation = computeBalanceDeviation();
             const prevPos = computePositionImbalance();
-            const prevRepeats = computeTeamRepeatPenalty(teams[t1].players, pairHistory) + computeTeamRepeatPenalty(teams[t2].players, pairHistory);
 
             teams[t1].players[i] = p2;
             teams[t2].players[j] = p1;
             teams[t1].totalAverage += s2 - s1;
             teams[t2].totalAverage += s1 - s2;
 
-            const newVariance = computeVariance();
+            const newDeviation = computeBalanceDeviation();
             const newPos = computePositionImbalance();
-            const newRepeats = computeTeamRepeatPenalty(teams[t1].players, pairHistory) + computeTeamRepeatPenalty(teams[t2].players, pairHistory);
-            const prevScore = (prevVariance * 5) + prevRepeats + (prevPos * POSITION_PRIORITY_WEIGHT);
-            const newScore = (newVariance * 5) + newRepeats + (newPos * POSITION_PRIORITY_WEIGHT);
 
-            if (newScore < prevScore - 0.0001) {
+            // Nota stays the priority: only accept a position fix if balance regression stays within budget.
+            const fixesPosition = newPos < prevPos && newDeviation <= prevDeviation + POSITION_FIX_TOLERANCE;
+            const keepsPositionButBalancesBetter = newPos <= prevPos && newDeviation < prevDeviation - 0.0001;
+
+            if (fixesPosition || keepsPositionButBalancesBetter) {
               posImproved = true;
             } else {
               teams[t1].players[i] = p1;
@@ -436,7 +443,7 @@ function buildBalancedTeams(players, teamsCount, randomSeed, pairHistory = {}) {
     }
   }
 
-  // Phase 3 — Pair history: still keep overall balance above position perfection
+  // Phase 3 — Reduce repeated pairings without regressing position quotas, keeping nota within budget
   const tolerance = 0.0001;
   let pairImproved = true;
   while (pairImproved) {
@@ -450,7 +457,7 @@ function buildBalancedTeams(players, teamsCount, randomSeed, pairHistory = {}) {
             const s1 = getHiddenLevelScore(p1);
             const s2 = getHiddenLevelScore(p2);
 
-            const prevVariance = computeVariance();
+            const prevDeviation = computeBalanceDeviation();
             const prevPos = computePositionImbalance();
             const prevRepeats = computeTeamRepeatPenalty(teams[t1].players, pairHistory) + computeTeamRepeatPenalty(teams[t2].players, pairHistory);
 
@@ -459,13 +466,14 @@ function buildBalancedTeams(players, teamsCount, randomSeed, pairHistory = {}) {
             teams[t1].totalAverage += s2 - s1;
             teams[t2].totalAverage += s1 - s2;
 
-            const newVariance = computeVariance();
+            const newDeviation = computeBalanceDeviation();
             const newPos = computePositionImbalance();
             const newRepeats = computeTeamRepeatPenalty(teams[t1].players, pairHistory) + computeTeamRepeatPenalty(teams[t2].players, pairHistory);
-            const prevScore = (prevVariance * 5) + (prevRepeats * PAIR_REPEAT_WEIGHT) + (prevPos * POSITION_PRIORITY_WEIGHT);
-            const newScore = (newVariance * 5) + (newRepeats * PAIR_REPEAT_WEIGHT) + (newPos * POSITION_PRIORITY_WEIGHT);
 
-            if (newScore < prevScore - tolerance) {
+            const improvesRepeats = newRepeats < prevRepeats - tolerance;
+            const staysWithinBudget = newPos <= prevPos && newDeviation <= prevDeviation + PAIR_FIX_TOLERANCE;
+
+            if (improvesRepeats && staysWithinBudget) {
               pairImproved = true;
             } else {
               teams[t1].players[i] = p1;
