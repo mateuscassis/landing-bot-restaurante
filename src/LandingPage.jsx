@@ -13,6 +13,7 @@ const DEFAULT_PLAYER_DEFENSE = 5;
 const DEFAULT_PLAYER_PASSING = 5;
 const DEFAULT_PLAYER_LINE_POSITION = "meio";
 const DEFAULT_PLAYER_IS_MONTHLY = false;
+const DEFAULT_PLAYER_JOIN_DATE = "";
 const MONTHLY_LIST_SIZE = 18;
 const TEAM_SIZE = 4;
 const PAIR_HISTORY_DECAY = 0.95;
@@ -49,6 +50,11 @@ function sanitizeIsMonthly(value) {
   return value === true || value === "true";
 }
 
+function sanitizeJoinDate(value) {
+  const normalized = String(value || "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : "";
+}
+
 function normalizePlayerName(name) {
   return name
     .trim()
@@ -81,6 +87,7 @@ function sanitizePlayers(players) {
         linePosition: sanitizeLinePosition(player.linePosition ?? player.position),
         role: sanitizeRole(player.role),
         isMonthly: sanitizeIsMonthly(player.isMonthly ?? player.mensalista),
+        joinDate: sanitizeJoinDate(player.joinDate),
       };
     });
 
@@ -104,6 +111,9 @@ function sanitizePlayers(players) {
     existing.passing = Math.max(existing.passing, player.passing);
     existing.role = existing.role === "goleiro" || player.role === "goleiro" ? "goleiro" : DEFAULT_PLAYER_ROLE;
     existing.isMonthly = existing.isMonthly || player.isMonthly;
+    if (player.joinDate && (!existing.joinDate || player.joinDate < existing.joinDate)) {
+      existing.joinDate = player.joinDate;
+    }
     if (existing.role !== "goleiro") {
       existing.linePosition = sanitizeLinePosition(player.linePosition);
     }
@@ -545,6 +555,7 @@ export default function LandingPage() {
     linePosition: DEFAULT_PLAYER_LINE_POSITION,
     role: DEFAULT_PLAYER_ROLE,
     isMonthly: DEFAULT_PLAYER_IS_MONTHLY,
+    joinDate: DEFAULT_PLAYER_JOIN_DATE,
   });
   const [searchTerm, setSearchTerm] = useState("");
   const [weeklySearchTerm, setWeeklySearchTerm] = useState("");
@@ -571,6 +582,7 @@ export default function LandingPage() {
     linePosition: DEFAULT_PLAYER_LINE_POSITION,
     role: DEFAULT_PLAYER_ROLE,
     isMonthly: DEFAULT_PLAYER_IS_MONTHLY,
+    joinDate: DEFAULT_PLAYER_JOIN_DATE,
   });
   const [isBulkEditing, setIsBulkEditing] = useState(false);
   const [bulkDrafts, setBulkDrafts] = useState({});
@@ -702,6 +714,9 @@ export default function LandingPage() {
           current.linePosition = sanitizeLinePosition(player.linePosition);
         }
         current.isMonthly = current.isMonthly || sanitizeIsMonthly(player.isMonthly);
+        if (player.joinDate && (!current.joinDate || player.joinDate < current.joinDate)) {
+          current.joinDate = player.joinDate;
+        }
         return;
       }
       grouped.set(key, {
@@ -717,6 +732,7 @@ export default function LandingPage() {
         linePosition: sanitizeLinePosition(player.linePosition),
         role: sanitizeRole(player.role),
         isMonthly: sanitizeIsMonthly(player.isMonthly),
+        joinDate: sanitizeJoinDate(player.joinDate),
       });
     });
     return Array.from(grouped.values());
@@ -807,7 +823,18 @@ export default function LandingPage() {
   }, [filteredPlayers, sortBy, sortDirection]);
 
   const monthlyPlayers = useMemo(
-    () => [...consolidatedPlayers].filter((player) => player.isMonthly).sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
+    () =>
+      [...consolidatedPlayers]
+        .filter((player) => player.isMonthly)
+        .sort((a, b) => {
+          // Sem data de entrada fica com a prioridade mais baixa (vai para o fim da lista).
+          const dateA = a.joinDate || "9999-99-99";
+          const dateB = b.joinDate || "9999-99-99";
+          if (dateA !== dateB) {
+            return dateA.localeCompare(dateB);
+          }
+          return a.name.localeCompare(b.name, "pt-BR");
+        }),
     [consolidatedPlayers]
   );
 
@@ -938,6 +965,7 @@ export default function LandingPage() {
     const linePosition = sanitizeLinePosition(formData.linePosition);
     const role = sanitizeRole(formData.role);
     const isMonthly = sanitizeIsMonthly(formData.isMonthly);
+    const joinDate = sanitizeJoinDate(formData.joinDate);
     if (!name) {
       return;
     }
@@ -964,6 +992,7 @@ export default function LandingPage() {
               linePosition,
               role,
               isMonthly,
+              joinDate: joinDate || player.joinDate || "",
             }
           : player
       );
@@ -982,6 +1011,7 @@ export default function LandingPage() {
           linePosition,
           role,
           isMonthly,
+          joinDate,
         },
         ...players,
       ];
@@ -1002,6 +1032,7 @@ export default function LandingPage() {
       linePosition: DEFAULT_PLAYER_LINE_POSITION,
       role: DEFAULT_PLAYER_ROLE,
       isMonthly: DEFAULT_PLAYER_IS_MONTHLY,
+      joinDate: DEFAULT_PLAYER_JOIN_DATE,
     });
   }
 
@@ -1018,6 +1049,7 @@ export default function LandingPage() {
       linePosition: sanitizeLinePosition(player.linePosition),
       role: sanitizeRole(player.role),
       isMonthly: sanitizeIsMonthly(player.isMonthly),
+      joinDate: sanitizeJoinDate(player.joinDate),
     };
   }
 
@@ -1070,6 +1102,7 @@ export default function LandingPage() {
         linePosition: sanitizeLinePosition(draft.linePosition),
         role: sanitizeRole(draft.role),
         isMonthly: sanitizeIsMonthly(draft.isMonthly),
+        joinDate: sanitizeJoinDate(draft.joinDate),
       };
     });
 
@@ -1096,6 +1129,7 @@ export default function LandingPage() {
       linePosition: sanitizeLinePosition(player.linePosition),
       role: sanitizeRole(player.role),
       isMonthly: sanitizeIsMonthly(player.isMonthly),
+      joinDate: sanitizeJoinDate(player.joinDate),
     });
   }
 
@@ -1113,6 +1147,7 @@ export default function LandingPage() {
       linePosition: DEFAULT_PLAYER_LINE_POSITION,
       role: DEFAULT_PLAYER_ROLE,
       isMonthly: DEFAULT_PLAYER_IS_MONTHLY,
+      joinDate: DEFAULT_PLAYER_JOIN_DATE,
     });
   }
 
@@ -1128,6 +1163,7 @@ export default function LandingPage() {
     const linePosition = sanitizeLinePosition(editDraft.linePosition);
     const role = sanitizeRole(editDraft.role);
     const isMonthly = sanitizeIsMonthly(editDraft.isMonthly);
+    const joinDate = sanitizeJoinDate(editDraft.joinDate);
 
     const nextPlayers = players.map((player) =>
       player.id === playerId
@@ -1144,6 +1180,7 @@ export default function LandingPage() {
             linePosition,
             role,
             isMonthly,
+            joinDate,
           }
         : player
     );
@@ -1530,7 +1567,7 @@ export default function LandingPage() {
           <div className="section-header">
             <p className="section-eyebrow">Lista de 18</p>
             <h2>Lista de mensalistas</h2>
-            <p className="sync-note">Todos os mensalistas entram automaticamente na lista. As vagas restantes ficam em aberto.</p>
+            <p className="sync-note">Todos os mensalistas entram automaticamente na lista, priorizados por data de entrada no grupo (mais antigos primeiro). Se sobrar mais de 18, os mais novos ficam de fora. As vagas restantes ficam em aberto.</p>
           </div>
           <div className="teams-controls">
             <strong>{monthlyPlayers.length} mensalista(s) cadastrado(s)</strong>
@@ -1660,6 +1697,14 @@ export default function LandingPage() {
                 />
                 Mensalista
               </label>
+              <label>
+                Data de entrada no grupo
+                <input
+                  type="date"
+                  value={formData.joinDate}
+                  onChange={(event) => setFormData((current) => ({ ...current, joinDate: event.target.value }))}
+                />
+              </label>
               <button type="submit" className="btn-primary form-btn" disabled={isMutating}>
                 {isMutating ? "Salvando..." : "Salvar jogador"}
               </button>
@@ -1709,6 +1754,7 @@ export default function LandingPage() {
                       <th>Funcao</th>
                       <th>Posicao</th>
                       <th className="mobile-hidden">Mensalista</th>
+                      <th className="mobile-hidden">Entrada</th>
                       <th className="mobile-hidden">Vel</th>
                       <th className="mobile-hidden">Fin</th>
                       <th className="mobile-hidden">Defesa</th>
@@ -1806,6 +1852,25 @@ export default function LandingPage() {
                             />
                           ) : (
                             player.isMonthly ? "Sim" : "Nao"
+                          )}
+                        </td>
+                        <td data-label="Entrada" className="mobile-hidden">
+                          {isBulkEditing ? (
+                            <input
+                              className="stat-input"
+                              type="date"
+                              value={bulkDrafts[player.id]?.joinDate || ""}
+                              onChange={(event) => updateBulkDraftField(player.id, "joinDate", event.target.value)}
+                            />
+                          ) : editingPlayerId === player.id ? (
+                            <input
+                              className="stat-input"
+                              type="date"
+                              value={editDraft.joinDate}
+                              onChange={(event) => setEditDraft((current) => ({ ...current, joinDate: event.target.value }))}
+                            />
+                          ) : (
+                            player.joinDate || "-"
                           )}
                         </td>
                         <td data-label="Vel" className="mobile-hidden">
@@ -1928,7 +1993,7 @@ export default function LandingPage() {
                     ))}
                     {!displayedPlayers.length && (
                       <tr>
-                        <td colSpan="9">Nenhum jogador encontrado.</td>
+                        <td colSpan="10">Nenhum jogador encontrado.</td>
                       </tr>
                     )}
                   </tbody>
