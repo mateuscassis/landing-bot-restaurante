@@ -13,7 +13,7 @@ const DEFAULT_PLAYER_DEFENSE = 5;
 const DEFAULT_PLAYER_PASSING = 5;
 const DEFAULT_PLAYER_LINE_POSITION = "meio";
 const DEFAULT_PLAYER_IS_MONTHLY = false;
-const MONTHLY_LIST_SIZE = 16;
+const MONTHLY_LIST_SIZE = 18;
 const TEAM_SIZE = 4;
 const PAIR_HISTORY_DECAY = 0.95;
 const PAIR_HISTORY_INCREMENT = 2;
@@ -822,7 +822,7 @@ export default function LandingPage() {
   }, [monthlyPlayers]);
 
   function exportMonthlyListToWhatsApp() {
-    const lines = ["Lista de 16 - Mensalistas", ""];
+    const lines = ["Lista de 18 - Mensalistas", ""];
     monthlyListSlots.forEach((name, index) => {
       lines.push(`${index + 1}. ${name || "Vaga"}`);
     });
@@ -1528,7 +1528,7 @@ export default function LandingPage() {
       <section id="lista-mensalistas" className="section-pad section-alt">
         <div className="container">
           <div className="section-header">
-            <p className="section-eyebrow">Lista de 16</p>
+            <p className="section-eyebrow">Lista de 18</p>
             <h2>Lista de mensalistas</h2>
             <p className="sync-note">Todos os mensalistas entram automaticamente na lista. As vagas restantes ficam em aberto.</p>
           </div>
@@ -1539,7 +1539,7 @@ export default function LandingPage() {
               className="btn-primary teams-export-btn"
               onClick={() => setMonthlyListGenerated(true)}
             >
-              Gerar lista de 16
+              Gerar lista de 18
             </button>
             {monthlyListGenerated && (
               <button
