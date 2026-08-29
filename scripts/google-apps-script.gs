@@ -28,6 +28,10 @@ function normalizeLinePosition_(position) {
   return "meio";
 }
 
+function normalizeIsMonthly_(value) {
+  return value === true || String(value || "").toLowerCase() === "true";
+}
+
 function doGet() {
   try {
     const players = readPlayers_();
@@ -184,6 +188,7 @@ function readPlayers_() {
   const positionIndex = headers.indexOf("position");
   const weightIndex = headers.indexOf("weight");
   const roleIndex = headers.indexOf("role");
+  const isMonthlyIndex = headers.indexOf("ismonthly");
 
   const safeIdIndex = idIndex >= 0 ? idIndex : 0;
   const safeNameIndex = nameIndex >= 0 ? nameIndex : 1;
@@ -216,6 +221,7 @@ function readPlayers_() {
       passing: normalizeRating_(safePassingIndex >= 0 ? row[safePassingIndex] : (legacyAttack + legacyDefense) / 2, 5),
       linePosition: normalizeLinePosition_(safeLinePositionIndex >= 0 ? row[safeLinePositionIndex] : "meio"),
       role: normalizeRole_(roleIndex >= 0 ? row[roleIndex] : "linha"),
+      isMonthly: normalizeIsMonthly_(isMonthlyIndex >= 0 ? row[isMonthlyIndex] : false),
     };
   });
 }
@@ -223,7 +229,7 @@ function readPlayers_() {
 function writePlayers_(players) {
   const sheet = getSheet_();
   sheet.clearContents();
-  sheet.appendRow(["id", "name", "goals", "assists", "championships", "speed", "finishing", "defense", "passing", "linePosition", "role"]);
+  sheet.appendRow(["id", "name", "goals", "assists", "championships", "speed", "finishing", "defense", "passing", "linePosition", "role", "isMonthly"]);
 
   if (!players.length) {
     return;
@@ -242,10 +248,11 @@ function writePlayers_(players) {
       normalizeRating_(player.passing, 5),
       normalizeLinePosition_(player.linePosition),
       normalizeRole_(player.role),
+      normalizeIsMonthly_(player.isMonthly),
     ];
   });
 
-  sheet.getRange(2, 1, rows.length, 11).setValues(rows);
+  sheet.getRange(2, 1, rows.length, 12).setValues(rows);
 }
 
 function getSheet_() {
@@ -256,7 +263,7 @@ function getSheet_() {
   }
 
   if (sheet.getLastRow() === 0) {
-    sheet.appendRow(["id", "name", "goals", "assists", "championships", "speed", "finishing", "defense", "passing", "linePosition", "role"]);
+    sheet.appendRow(["id", "name", "goals", "assists", "championships", "speed", "finishing", "defense", "passing", "linePosition", "role", "isMonthly"]);
   }
 
   return sheet;

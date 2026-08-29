@@ -1808,3 +1808,42 @@ p {
     margin-bottom: 0;
   }
 }
+
+.checkbox-field {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px;
+}
+
+.checkbox-field input {
+  width: auto;
+}
+
+.monthly-list {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+  margin: 20px 0 0;
+  padding: 0;
+}
+
+.monthly-list-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.monthly-list-item--vaga {
+  border-style: dashed;
+  color: var(--muted);
+}
+
+.monthly-list-item__number {
+  font-weight: 700;
+  color: var(--accent);
+}
