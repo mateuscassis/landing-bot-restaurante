@@ -558,6 +558,7 @@ export default function LandingPage() {
     joinDate: DEFAULT_PLAYER_JOIN_DATE,
   });
   const [searchTerm, setSearchTerm] = useState("");
+  const [monthlyFilter, setMonthlyFilter] = useState("all");
   const [weeklySearchTerm, setWeeklySearchTerm] = useState("");
   const [statsSearchTerm, setStatsSearchTerm] = useState("");
   const [statsSortBy, setStatsSortBy] = useState("goals");
@@ -778,11 +779,14 @@ export default function LandingPage() {
 
   const filteredPlayers = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
-    if (!term) {
-      return players;
-    }
-    return players.filter((player) => String(player.name || "").toLowerCase().includes(term));
-  }, [players, searchTerm]);
+    return players.filter((player) => {
+      const matchesTerm = !term || String(player.name || "").toLowerCase().includes(term);
+      const matchesMonthly =
+        monthlyFilter === "all" ||
+        (monthlyFilter === "monthly" ? Boolean(player.isMonthly) : !player.isMonthly);
+      return matchesTerm && matchesMonthly;
+    });
+  }, [players, searchTerm, monthlyFilter]);
 
   const displayedPlayers = useMemo(() => {
     const getSafeName = (player) => String(player.name || "");
@@ -1752,6 +1756,11 @@ export default function LandingPage() {
                   <option value="finishing">Finalizacao</option>
                   <option value="defense">Defesa</option>
                   <option value="passing">Passe</option>
+                </select>
+                <select value={monthlyFilter} onChange={(event) => setMonthlyFilter(event.target.value)} className="sort-select">
+                  <option value="all">Todos</option>
+                  <option value="monthly">Somente mensalistas</option>
+                  <option value="nonMonthly">Somente nao mensalistas</option>
                 </select>
                 <button
                   type="button"
