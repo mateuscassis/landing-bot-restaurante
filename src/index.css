@@ -1843,6 +1843,15 @@ p {
   color: var(--muted);
 }
 
+.monthly-list-item--reserve {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+.monthly-reserve-card {
+  margin-top: 20px;
+}
+
 .monthly-list-item__number {
   font-weight: 700;
   color: var(--accent);

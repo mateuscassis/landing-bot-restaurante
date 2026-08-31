@@ -848,11 +848,22 @@ export default function LandingPage() {
     return slots;
   }, [monthlyPlayers]);
 
+  const monthlyReservePlayers = useMemo(
+    () => monthlyPlayers.slice(MONTHLY_LIST_SIZE),
+    [monthlyPlayers]
+  );
+
   function exportMonthlyListToWhatsApp() {
     const lines = ["Lista de 18 - Mensalistas", ""];
     monthlyListSlots.forEach((name, index) => {
       lines.push(`${index + 1}. ${name || "Vaga"}`);
     });
+    if (monthlyReservePlayers.length) {
+      lines.push("", "Reservas (entram por ordem se alguem desistir)");
+      monthlyReservePlayers.forEach((player, index) => {
+        lines.push(`${index + 1}. ${player.name}`);
+      });
+    }
     const message = encodeURIComponent(lines.join("\n"));
     window.open(`https://wa.me/?text=${message}`, "_blank", "noopener,noreferrer");
   }
@@ -1597,6 +1608,20 @@ export default function LandingPage() {
                 </li>
               ))}
             </ul>
+          )}
+          {monthlyListGenerated && monthlyReservePlayers.length > 0 && (
+            <div className="reserve-card monthly-reserve-card">
+              <h3>Reservas</h3>
+              <p className="team-meta">Entram na lista por ordem, se algum mensalista desistir.</p>
+              <ul className="monthly-list">
+                {monthlyReservePlayers.map((player, index) => (
+                  <li key={player.id} className="monthly-list-item monthly-list-item--reserve">
+                    <span className="monthly-list-item__number">{index + 1}</span>
+                    <span className="monthly-list-item__name">{player.name}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </div>
       </section>
