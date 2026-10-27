@@ -582,6 +582,8 @@ export default function LandingPage() {
   const [minimizedMatchId, setMinimizedMatchId] = useState(null);
   const [customExportBackground, setCustomExportBackground] = useState(null);
   const [balancedTeams, setBalancedTeams] = useState([]);
+  const [teamMode, setTeamMode] = useState("auto");
+  const [manualAssignments, setManualAssignments] = useState({});
   const [teamPairHistory, setTeamPairHistory] = useState(() => loadTeamPairHistory());
   const [syncStatus, setSyncStatus] = useState(SHEETS_API_URL ? "syncing" : "local");
   const [editingPlayerId, setEditingPlayerId] = useState(null);
@@ -944,6 +946,8 @@ export default function LandingPage() {
         const stored = JSON.parse(window.localStorage.getItem(WEEKLY_SELECTION_KEY) || "{}");
         setWeeklySelectedPlayerIds(Array.isArray(stored.players) ? stored.players : []);
         setWeeklyKeeperIds(Array.isArray(stored.keepers) ? stored.keepers : []);
+        setTeamMode(stored.teamMode === "manual" ? "manual" : "auto");
+        setManualAssignments(stored.manualAssignments && typeof stored.manualAssignments === "object" ? stored.manualAssignments : {});
       } catch {
         // Start empty when storage is unavailable.
       }
@@ -960,12 +964,12 @@ export default function LandingPage() {
     try {
       window.localStorage.setItem(
         WEEKLY_SELECTION_KEY,
-        JSON.stringify({ players: weeklySelectedPlayerIds, keepers: weeklyKeeperIds })
+        JSON.stringify({ players: weeklySelectedPlayerIds, keepers: weeklyKeeperIds, teamMode, manualAssignments })
       );
     } catch {
       // Ignore storage errors.
     }
-  }, [weeklySelectedPlayerIds, weeklyKeeperIds]);
+  }, [weeklySelectedPlayerIds, weeklyKeeperIds, teamMode, manualAssignments]);
 
   const weeklySelectedPlayers = useMemo(() => {
     const selectedIds = new Set(weeklySelectedPlayerIds);
@@ -994,6 +998,59 @@ export default function LandingPage() {
   useEffect(() => {
     setBalancedTeams(buildBalancedTeams(weeklySelectedPlayers, weeklyTeamsCount, teamsDrawSeed, teamPairHistory));
   }, [weeklySelectedPlayers, weeklyTeamsCount, teamsDrawSeed, teamPairHistory]);
+
+  // Manual mode: each selected player is assigned to a team index by hand (e.g. when the group
+  // already split the teams). Players assigned beyond a full team are ignored.
+  const manualTeams = useMemo(() => {
+    const teams = Array.from({ length: weeklyTeamsCount }, (_, index) => ({
+      id: index + 1,
+      name: `Time ${index + 1}`,
+      players: [],
+    }));
+    weeklySelectedPlayers.forEach((player) => {
+      const team = teams[manualAssignments[player.id]];
+      if (team && team.players.length < TEAM_SIZE) {
+        team.players.push(player);
+      }
+    });
+    return teams;
+  }, [weeklySelectedPlayers, weeklyTeamsCount, manualAssignments]);
+
+  const manualUnassignedCount = weeklySelectedPlayers.length - manualTeams.reduce((sum, team) => sum + team.players.length, 0);
+  const weeklyTeams = teamMode === "manual" ? manualTeams : balancedTeams;
+  const weeklyTeamsReady = weeklyTeams.length >= 2 && weeklyTeams.every((team) => team.players.length > 0)
+    && (teamMode !== "manual" || manualUnassignedCount === 0 || weeklyTeams.every((team) => team.players.length === TEAM_SIZE));
+
+  function switchToManualTeams() {
+    if (teamMode === "manual") {
+      return;
+    }
+    // Start from the current draw so small tweaks only take a couple of taps.
+    const assignments = {};
+    balancedTeams.forEach((team, index) => {
+      team.players.forEach((player) => {
+        assignments[player.id] = index;
+      });
+    });
+    setManualAssignments(assignments);
+    setTeamMode("manual");
+  }
+
+  function assignManualPlayer(playerId, teamIndex) {
+    setManualAssignments((current) => {
+      const next = { ...current };
+      if (next[playerId] === teamIndex) {
+        delete next[playerId];
+      } else {
+        next[playerId] = teamIndex;
+      }
+      return next;
+    });
+  }
+
+  function clearManualTeams() {
+    setManualAssignments({});
+  }
 
   function toggleWeeklyPlayer(playerId) {
     setWeeklySelectedPlayerIds((current) => {
@@ -1046,10 +1103,10 @@ export default function LandingPage() {
 
   const hasPlayedMatches = getMatches(liveTournament).some((match) => match.status !== "pending");
 
-  // Freezes the drawn teams into the shared tournament. Pair history is recorded here (teams that
-  // actually played), not on every redraw.
+  // Freezes the drawn (or hand-built) teams into the shared tournament. Pair history is recorded
+  // here (teams that actually played), not on every redraw.
   function confirmTeams() {
-    if (balancedTeams.length < 2) {
+    if (!weeklyTeamsReady) {
       return;
     }
     if (liveTournament && !window.confirm(
@@ -1059,9 +1116,9 @@ export default function LandingPage() {
     )) {
       return;
     }
-    const tournament = createTournament(balancedTeams, weeklyKeepers, liveStore.now());
+    const tournament = createTournament(weeklyTeams, weeklyKeepers, liveStore.now());
     liveStore.update(() => tournament);
-    setTeamPairHistory((current) => updatePairHistoryWithTeams(current, balancedTeams));
+    setTeamPairHistory((current) => updatePairHistoryWithTeams(current, weeklyTeams));
     setMinimizedMatchId(null);
     setOpenedMatchId(null);
     setTimeout(() => scrollTo("chaveamento"), 50);
@@ -1132,13 +1189,13 @@ export default function LandingPage() {
   }
 
   function exportTeamsToWhatsApp() {
-    if (!balancedTeams.length) {
+    if (!weeklyTeams.length) {
       return;
     }
 
     const lines = ["Times da semana", ""];
 
-    balancedTeams.forEach((team) => {
+    weeklyTeams.forEach((team) => {
       lines.push(`${team.name} (${team.players.length}/${TEAM_SIZE})`);
       team.players.forEach((player) => {
         lines.push(`- ${player.name}`);
@@ -1735,11 +1792,65 @@ export default function LandingPage() {
 
           {weeklyTeamsCount >= 2 ? (
             <>
-              <div className="teams-controls">
-                <button type="button" className="sort-toggle" onClick={redrawTeams}>
-                  🎲 Sortear novamente
+              <div className="team-mode-toggle" role="group" aria-label="Como montar os times">
+                <button type="button" className={teamMode === "auto" ? "active" : ""} onClick={() => setTeamMode("auto")}>
+                  🎲 Sorteio
                 </button>
-                <button type="button" className="sort-toggle" onClick={() => exportTeamsImage(balancedTeams, weeklyKeepers, customExportBackground, { displayOVR, getCardTier })}>
+                <button type="button" className={teamMode === "manual" ? "active" : ""} onClick={switchToManualTeams}>
+                  ✋ Manual
+                </button>
+              </div>
+
+              {teamMode === "manual" && (
+                <div className="manual-teams">
+                  <div className="manual-teams__head">
+                    <p className="sync-note">Toque no numero do time de cada jogador. Toque de novo para tirar.</p>
+                    <button type="button" className="sort-toggle" onClick={clearManualTeams}>Limpar times</button>
+                  </div>
+                  <ul>
+                    {weeklySelectedPlayers.map((player) => {
+                      const currentTeam = manualAssignments[player.id];
+                      return (
+                        <li key={player.id} className="manual-row">
+                          <span className={`team-card__badge team-card__badge--${getCardTier(player)}`}>{displayOVR(player)}</span>
+                          <span className="manual-row__name">{player.name}</span>
+                          <div className="manual-row__teams">
+                            {manualTeams.map((team, teamIndex) => {
+                              const active = currentTeam === teamIndex;
+                              const full = !active && team.players.length >= TEAM_SIZE;
+                              return (
+                                <button
+                                  type="button"
+                                  key={team.id}
+                                  className={`manual-team-btn${active ? " active" : ""}`}
+                                  style={{ "--team-color": TEAM_COLORS[teamIndex % TEAM_COLORS.length] }}
+                                  disabled={full}
+                                  aria-label={`${player.name} no ${team.name}`}
+                                  aria-pressed={active}
+                                  onClick={() => assignManualPlayer(player.id, teamIndex)}
+                                >
+                                  {teamIndex + 1}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  {manualUnassignedCount > 0 && (
+                    <p className="sync-note">{manualUnassignedCount} jogador(es) ainda sem time.</p>
+                  )}
+                </div>
+              )}
+
+              <div className="teams-controls">
+                {teamMode === "auto" && (
+                  <button type="button" className="sort-toggle" onClick={redrawTeams}>
+                    🎲 Sortear novamente
+                  </button>
+                )}
+                <button type="button" className="sort-toggle" onClick={() => exportTeamsImage(weeklyTeams, weeklyKeepers, customExportBackground, { displayOVR, getCardTier })}>
                   📸 Exportar imagem
                 </button>
                 <label className="sort-toggle teams-bg-picker">
@@ -1752,7 +1863,7 @@ export default function LandingPage() {
                 <button type="button" className="sort-toggle" onClick={exportTeamsToWhatsApp}>
                   Enviar como texto
                 </button>
-                <button type="button" className="btn-primary teams-export-btn" onClick={confirmTeams}>
+                <button type="button" className="btn-primary teams-export-btn" onClick={confirmTeams} disabled={!weeklyTeamsReady}>
                   Confirmar times e montar chaveamento
                 </button>
               </div>
@@ -1760,7 +1871,7 @@ export default function LandingPage() {
                 <p className="sync-note">Faltam {WEEKLY_LINE_PLAYERS - weeklySelectedPlayers.length} jogador(es) para fechar os {WEEKLY_TEAMS_COUNT} times. {weeklyReservePlayers.length > 0 && `${weeklyReservePlayers.length} ficam de reserva por enquanto.`}</p>
               )}
               <div className="teams-grid" key={teamsDrawSeed}>
-                {balancedTeams.map((team, teamIndex) => {
+                {weeklyTeams.map((team, teamIndex) => {
                   const color = TEAM_COLORS[teamIndex % TEAM_COLORS.length];
                   const teamOvr = Math.round(team.players.reduce((sum, player) => sum + displayOVR(player), 0) / Math.max(1, team.players.length));
                   return (
