@@ -584,6 +584,7 @@ export default function LandingPage() {
   const [balancedTeams, setBalancedTeams] = useState([]);
   const [teamMode, setTeamMode] = useState("auto");
   const [manualAssignments, setManualAssignments] = useState({});
+  const [activeManualTeam, setActiveManualTeam] = useState(0);
   const [teamPairHistory, setTeamPairHistory] = useState(() => loadTeamPairHistory());
   const [syncStatus, setSyncStatus] = useState(SHEETS_API_URL ? "syncing" : "local");
   const [editingPlayerId, setEditingPlayerId] = useState(null);
@@ -1016,40 +1017,55 @@ export default function LandingPage() {
     return teams;
   }, [weeklySelectedPlayers, weeklyTeamsCount, manualAssignments]);
 
-  const manualUnassignedCount = weeklySelectedPlayers.length - manualTeams.reduce((sum, team) => sum + team.players.length, 0);
+  const manualUnassignedPlayers = useMemo(() => {
+    const placedIds = new Set(manualTeams.flatMap((team) => team.players.map((player) => player.id)));
+    return weeklySelectedPlayers.filter((player) => !placedIds.has(player.id));
+  }, [manualTeams, weeklySelectedPlayers]);
+  const manualUnassignedCount = manualUnassignedPlayers.length;
   const weeklyTeams = teamMode === "manual" ? manualTeams : balancedTeams;
   const weeklyTeamsReady = weeklyTeams.length >= 2 && weeklyTeams.every((team) => team.players.length > 0)
     && (teamMode !== "manual" || manualUnassignedCount === 0 || weeklyTeams.every((team) => team.players.length === TEAM_SIZE));
 
-  function switchToManualTeams() {
-    if (teamMode === "manual") {
-      return;
-    }
-    // Start from the current draw so small tweaks only take a couple of taps.
-    const assignments = {};
-    balancedTeams.forEach((team, index) => {
-      team.players.forEach((player) => {
-        assignments[player.id] = index;
-      });
-    });
-    setManualAssignments(assignments);
-    setTeamMode("manual");
+  useEffect(() => {
+    setActiveManualTeam((current) => (current < weeklyTeamsCount ? current : 0));
+  }, [weeklyTeamsCount]);
+
+  function firstTeamWithRoom(teams, skipIndex = -1) {
+    return teams.findIndex((team, index) => index !== skipIndex && team.players.length < TEAM_SIZE);
   }
 
-  function assignManualPlayer(playerId, teamIndex) {
+  function switchToManualTeams() {
+    setTeamMode("manual");
+    setActiveManualTeam(Math.max(0, firstTeamWithRoom(manualTeams)));
+  }
+
+  // Picking sides: tap a team, then tap players to put them in it. A full team hands over to the next one.
+  function addToActiveManualTeam(playerId) {
+    const team = manualTeams[activeManualTeam];
+    if (!team || team.players.length >= TEAM_SIZE) {
+      return;
+    }
+    setManualAssignments((current) => ({ ...current, [playerId]: activeManualTeam }));
+    if (team.players.length + 1 >= TEAM_SIZE) {
+      const nextTeam = firstTeamWithRoom(manualTeams, activeManualTeam);
+      if (nextTeam >= 0) {
+        setActiveManualTeam(nextTeam);
+      }
+    }
+  }
+
+  function removeManualPlayer(playerId, teamIndex) {
     setManualAssignments((current) => {
       const next = { ...current };
-      if (next[playerId] === teamIndex) {
-        delete next[playerId];
-      } else {
-        next[playerId] = teamIndex;
-      }
+      delete next[playerId];
       return next;
     });
+    setActiveManualTeam(teamIndex);
   }
 
   function clearManualTeams() {
     setManualAssignments({});
+    setActiveManualTeam(0);
   }
 
   function toggleWeeklyPlayer(playerId) {
@@ -1501,6 +1517,59 @@ export default function LandingPage() {
     );
   }
 
+  function renderTeamCards() {
+    const isManual = teamMode === "manual";
+    return (
+      <div className={`teams-grid${isManual ? " teams-grid--manual" : ""}`} key={isManual ? "manual" : teamsDrawSeed}>
+        {weeklyTeams.map((team, teamIndex) => {
+          const color = TEAM_COLORS[teamIndex % TEAM_COLORS.length];
+          const teamOvr = Math.round(team.players.reduce((sum, player) => sum + displayOVR(player), 0) / Math.max(1, team.players.length));
+          const isActive = isManual && teamIndex === activeManualTeam;
+          return (
+            <article
+              key={team.id}
+              className={`team-card ${isManual ? "team-card--manual" : "team-card--reveal"}${isActive ? " team-card--active" : ""}`}
+              style={{ "--team-color": color, animationDelay: `${teamIndex * 180}ms` }}
+              onClick={isManual ? () => setActiveManualTeam(teamIndex) : undefined}
+            >
+              <header className="team-card__head">
+                <h3>{team.name}</h3>
+                <span className="team-card__ovr">{isManual ? `${team.players.length}/${TEAM_SIZE}` : `OVR ${teamOvr}`}</span>
+              </header>
+              <ul>
+                {team.players.map((player) => (
+                  <li key={player.id}>
+                    <span className={`team-card__badge team-card__badge--${getCardTier(player)}`}>{displayOVR(player)}</span>
+                    <span className="team-card__name">{player.name}</span>
+                    {isManual ? (
+                      <button
+                        type="button"
+                        className="team-card__remove"
+                        aria-label={`Tirar ${player.name} do ${team.name}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          removeManualPlayer(player.id, teamIndex);
+                        }}
+                      >
+                        <X size={16} />
+                      </button>
+                    ) : (
+                      <small>{sanitizeLinePosition(player.linePosition)}</small>
+                    )}
+                  </li>
+                ))}
+                {isManual && team.players.length < TEAM_SIZE && (
+                  <li className="team-card__empty">{isActive ? "Toque nos jogadores acima" : "Toque aqui para escolher"}</li>
+                )}
+              </ul>
+              {isManual && team.players.length > 0 && <p className="team-card__manual-ovr">OVR {teamOvr}</p>}
+            </article>
+          );
+        })}
+      </div>
+    );
+  }
+
   if (!isInitialSyncDone) {
     return (
       <div className="sync-loading-screen">
@@ -1804,45 +1873,34 @@ export default function LandingPage() {
               {teamMode === "manual" && (
                 <div className="manual-teams">
                   <div className="manual-teams__head">
-                    <p className="sync-note">Toque no numero do time de cada jogador. Toque de novo para tirar.</p>
-                    <button type="button" className="sort-toggle" onClick={clearManualTeams}>Limpar times</button>
+                    <p className="manual-teams__hint">
+                      {manualUnassignedCount === 0
+                        ? "Pronto! Todos os jogadores tem time."
+                        : manualTeams[activeManualTeam]?.players.length < TEAM_SIZE
+                          ? <>Escolhendo o <strong style={{ color: TEAM_COLORS[activeManualTeam % TEAM_COLORS.length] }}>{manualTeams[activeManualTeam]?.name}</strong>: toque nos jogadores</>
+                          : "Esse time ja tem 4. Toque em outro time abaixo."}
+                    </p>
+                    <button type="button" className="sort-toggle" onClick={clearManualTeams}>Recomecar</button>
                   </div>
-                  <ul>
-                    {weeklySelectedPlayers.map((player) => {
-                      const currentTeam = manualAssignments[player.id];
-                      return (
-                        <li key={player.id} className="manual-row">
-                          <span className={`team-card__badge team-card__badge--${getCardTier(player)}`}>{displayOVR(player)}</span>
-                          <span className="manual-row__name">{player.name}</span>
-                          <div className="manual-row__teams">
-                            {manualTeams.map((team, teamIndex) => {
-                              const active = currentTeam === teamIndex;
-                              const full = !active && team.players.length >= TEAM_SIZE;
-                              return (
-                                <button
-                                  type="button"
-                                  key={team.id}
-                                  className={`manual-team-btn${active ? " active" : ""}`}
-                                  style={{ "--team-color": TEAM_COLORS[teamIndex % TEAM_COLORS.length] }}
-                                  disabled={full}
-                                  aria-label={`${player.name} no ${team.name}`}
-                                  aria-pressed={active}
-                                  onClick={() => assignManualPlayer(player.id, teamIndex)}
-                                >
-                                  {teamIndex + 1}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
                   {manualUnassignedCount > 0 && (
-                    <p className="sync-note">{manualUnassignedCount} jogador(es) ainda sem time.</p>
+                    <div className="manual-pool">
+                      {manualUnassignedPlayers.map((player) => (
+                        <button
+                          type="button"
+                          key={player.id}
+                          className="manual-pool__player"
+                          style={{ "--team-color": TEAM_COLORS[activeManualTeam % TEAM_COLORS.length] }}
+                          onClick={() => addToActiveManualTeam(player.id)}
+                        >
+                          <span className={`team-card__badge team-card__badge--${getCardTier(player)}`}>{displayOVR(player)}</span>
+                          {player.name}
+                        </button>
+                      ))}
+                    </div>
                   )}
                 </div>
               )}
+              {teamMode === "manual" && renderTeamCards()}
 
               <div className="teams-controls">
                 {teamMode === "auto" && (
@@ -1870,33 +1928,7 @@ export default function LandingPage() {
               {weeklySelectedPlayers.length < WEEKLY_LINE_PLAYERS && (
                 <p className="sync-note">Faltam {WEEKLY_LINE_PLAYERS - weeklySelectedPlayers.length} jogador(es) para fechar os {WEEKLY_TEAMS_COUNT} times. {weeklyReservePlayers.length > 0 && `${weeklyReservePlayers.length} ficam de reserva por enquanto.`}</p>
               )}
-              <div className="teams-grid" key={teamsDrawSeed}>
-                {weeklyTeams.map((team, teamIndex) => {
-                  const color = TEAM_COLORS[teamIndex % TEAM_COLORS.length];
-                  const teamOvr = Math.round(team.players.reduce((sum, player) => sum + displayOVR(player), 0) / Math.max(1, team.players.length));
-                  return (
-                    <article
-                      key={team.id}
-                      className="team-card team-card--reveal"
-                      style={{ "--team-color": color, animationDelay: `${teamIndex * 180}ms` }}
-                    >
-                      <header className="team-card__head">
-                        <h3>{team.name}</h3>
-                        <span className="team-card__ovr">OVR {teamOvr}</span>
-                      </header>
-                      <ul>
-                        {team.players.map((player) => (
-                          <li key={player.id}>
-                            <span className={`team-card__badge team-card__badge--${getCardTier(player)}`}>{displayOVR(player)}</span>
-                            <span className="team-card__name">{player.name}</span>
-                            <small>{sanitizeLinePosition(player.linePosition)}</small>
-                          </li>
-                        ))}
-                      </ul>
-                    </article>
-                  );
-                })}
-              </div>
+              {teamMode === "auto" && renderTeamCards()}
               {weeklyKeepers.length > 0 && (
                 <p className="teams-keepers">🧤 Goleiros (jogam para todos): {weeklyKeepers.map((player) => player.name).join(" e ")}</p>
               )}
