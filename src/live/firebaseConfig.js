@@ -3,7 +3,7 @@
 // Leave databaseURL empty to run the scoreboard in local mode (this browser only).
 // VITE_FIREBASE_* environment variables, when set, take precedence.
 export const firebaseConfig = {
-  databaseURL: "",
-  apiKey: "",
-  projectId: "",
+  databaseURL: "https://personal-bc014-default-rtdb.firebaseio.com",
+  apiKey: "AIzaSyB9qLuGPe8bgr9qTP760GovcG4Pp7sFmIQ",
+  projectId: "personal-bc014",
 };
