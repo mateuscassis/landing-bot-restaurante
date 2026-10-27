@@ -814,3 +814,68 @@
     flex-shrink: 0;
   }
 }
+
+/* Cup: group stage + knockout */
+
+.tournament-stage-title {
+  font-size: 1.2rem;
+  color: var(--ink-2);
+  margin: 0 0 8px;
+}
+
+.tournament-knockout {
+  margin-top: 20px;
+}
+
+.tournament-match__label {
+  grid-column: 1 / -1;
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--brand);
+}
+
+.tournament-match--final {
+  border-color: var(--brand);
+  background: linear-gradient(135deg, rgba(245, 200, 66, 0.12), var(--bg-3));
+}
+
+.tournament-match__team.is-winner::after {
+  content: " ✓";
+}
+
+.tournament-match__tiebreak {
+  display: block;
+  font-family: "Montserrat", Arial, sans-serif;
+  font-size: 0.65rem;
+  color: var(--muted);
+}
+
+.match-tiebreak {
+  margin-top: auto;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid var(--brand);
+  background: var(--bg-2);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: center;
+}
+
+.match-tiebreak__options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.match-tiebreak__team {
+  min-height: 56px;
+  border: none;
+  border-radius: 12px;
+  background: var(--team-color);
+  color: #111;
+  font-weight: 800;
+  font-size: 1rem;
+}

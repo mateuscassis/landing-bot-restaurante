@@ -36,6 +36,31 @@ export function buildRoundRobin(teamIds) {
   return rounds;
 }
 
+// Stages: "group" (round robin), then with 4 teams the knockout: "semi", "third" and "final".
+export const PLAYOFF_TEAMS = 4;
+
+export function getStage(match) {
+  return match.stage || "group";
+}
+
+export function getMatchLabel(match) {
+  return match.label || `Jogo ${match.number}`;
+}
+
+function makeMatch(number, homeId, awayId, extra = {}, durationSec = DEFAULT_MATCH_MINUTES * 60) {
+  return {
+    id: `m${number}`,
+    number,
+    stage: "group",
+    homeId,
+    awayId,
+    status: "pending",
+    events: [],
+    timer: { durationSec, running: false, startedAt: 0, elapsedMs: 0 },
+    ...extra,
+  };
+}
+
 export function createTournament(teams, keepers, now) {
   const storedTeams = teams.map((team, index) => ({
     id: team.id,
@@ -49,17 +74,75 @@ export function createTournament(teams, keepers, now) {
     createdAt: now,
     teams: storedTeams,
     keepers: keepers.map((player) => ({ id: player.id, name: player.name })),
-    matches: buildRoundRobin(storedTeams.map((team) => team.id)).map(([homeId, awayId], index) => ({
-      id: `m${index + 1}`,
-      number: index + 1,
-      homeId,
-      awayId,
-      status: "pending",
-      events: [],
-      timer: { durationSec: DEFAULT_MATCH_MINUTES * 60, running: false, startedAt: 0, elapsedMs: 0 },
-    })),
+    matches: buildRoundRobin(storedTeams.map((team) => team.id)).map(([homeId, awayId], index) => makeMatch(index + 1, homeId, awayId)),
     activeMatchId: null,
   };
+}
+
+// Knockout matches can't end tied: a draw needs winnerId (penalties or the group's own rule).
+export function getMatchWinnerId(match) {
+  const score = getMatchScore(match);
+  if (score.home === score.away) {
+    return match.winnerId || null;
+  }
+  return score.home > score.away ? match.homeId : match.awayId;
+}
+
+function getMatchLoserId(match) {
+  const winnerId = getMatchWinnerId(match);
+  if (!winnerId) {
+    return null;
+  }
+  return winnerId === match.homeId ? match.awayId : match.homeId;
+}
+
+// Adds the next knockout round once the previous one is over: semis (1st x 4th, 2nd x 3rd) after the
+// group stage, then the 3rd place match and the final after both semis. New matches keep the
+// duration of the last one played.
+export function withPlayoffs(state) {
+  if (!state || getTeams(state).length !== PLAYOFF_TEAMS) {
+    return state;
+  }
+  const matches = getMatches(state);
+  const byStage = (stage) => matches.filter((match) => getStage(match) === stage);
+  const allFinished = (list) => list.length > 0 && list.every((match) => match.status === "finished");
+  const lastDuration = [...matches].reverse().find((match) => match.status === "finished")?.timer?.durationSec;
+  const next = [...matches];
+  const add = (homeId, awayId, extra) => next.push(makeMatch(next.length + 1, homeId, awayId, extra, lastDuration));
+
+  if (!byStage("semi").length) {
+    if (!allFinished(byStage("group"))) {
+      return state;
+    }
+    const table = getStandings(state);
+    add(table[0].team.id, table[3].team.id, { stage: "semi", label: "Semifinal 1" });
+    add(table[1].team.id, table[2].team.id, { stage: "semi", label: "Semifinal 2" });
+    return { ...state, matches: next };
+  }
+
+  const semis = byStage("semi");
+  if (byStage("final").length || !allFinished(semis) || semis.some((match) => !getMatchWinnerId(match))) {
+    return state;
+  }
+  add(getMatchLoserId(semis[0]), getMatchLoserId(semis[1]), { stage: "third", label: "Disputa de 3º lugar" });
+  add(getMatchWinnerId(semis[0]), getMatchWinnerId(semis[1]), { stage: "final", label: "Final" });
+  return { ...state, matches: next };
+}
+
+// Champion: winner of the final when there is a knockout, otherwise the top of the table once every
+// match is over.
+export function getChampion(tournament) {
+  const matches = getMatches(tournament);
+  const teamsById = new Map(getTeams(tournament).map((team) => [team.id, team]));
+  const final = matches.find((match) => getStage(match) === "final");
+  if (final) {
+    return final.status === "finished" ? teamsById.get(getMatchWinnerId(final)) || null : null;
+  }
+  if (getTeams(tournament).length === PLAYOFF_TEAMS) {
+    return null;
+  }
+  const allFinished = matches.length > 0 && matches.every((match) => match.status === "finished");
+  return allFinished ? getStandings(tournament)[0]?.team || null : null;
 }
 
 export function getTeams(tournament) {
@@ -94,7 +177,7 @@ export function getStandings(tournament) {
   );
 
   getMatches(tournament)
-    .filter((match) => match.status === "finished")
+    .filter((match) => match.status === "finished" && getStage(match) === "group")
     .forEach((match) => {
       const score = getMatchScore(match);
       const home = table.get(match.homeId);

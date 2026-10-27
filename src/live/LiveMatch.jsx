@@ -4,14 +4,20 @@ import { liveStore } from "./liveStore";
 import {
   asList,
   formatClock,
+  getChampion,
+  getMatchLabel,
   getMatches,
   getMatchScore,
+  getMatchWinnerId,
   getRemainingMs,
+  getStage,
   getStandings,
   getTeams,
   newEvent,
+  PLAYOFF_TEAMS,
   summarizeEvents,
   updateMatch,
+  withPlayoffs,
 } from "./tournament";
 import "./tournament.css";
 
@@ -115,8 +121,41 @@ export function TournamentSection({ tournament, onReset, onAwardTitle, onOpenMat
   const standings = getStandings(tournament);
   const teamsById = new Map(teams.map((team) => [team.id, team]));
   const keepers = asList(tournament.keepers);
-  const allFinished = matches.length > 0 && matches.every((match) => match.status === "finished");
-  const champion = allFinished ? standings[0] : null;
+  const champion = getChampion(tournament);
+  const groupMatches = matches.filter((match) => getStage(match) === "group");
+  const knockoutMatches = matches.filter((match) => getStage(match) !== "group");
+  const hasPlayoffs = teams.length === PLAYOFF_TEAMS;
+
+  function renderMatchRow(match) {
+    const home = teamsById.get(match.homeId);
+    const away = teamsById.get(match.awayId);
+    const score = getMatchScore(match);
+    const winnerId = match.status === "finished" ? getMatchWinnerId(match) : null;
+    const wonOnTiebreak = match.status === "finished" && Boolean(match.winnerId) && score.home === score.away;
+    return (
+      <div key={match.id} className={`tournament-match tournament-match--${match.status} tournament-match--${getStage(match)}`}>
+        <span className="tournament-match__number">{getStage(match) === "group" ? `#${match.number}` : ""}</span>
+        {getStage(match) !== "group" && <span className="tournament-match__label">{getMatchLabel(match)}</span>}
+        <span className={`tournament-match__team${winnerId === match.homeId ? " is-winner" : ""}`} style={{ "--team-color": home?.color }}>{home?.name}</span>
+        <span className="tournament-match__score">
+          {match.status === "pending" ? "x" : `${score.home} x ${score.away}`}
+          {wonOnTiebreak && <small className="tournament-match__tiebreak">pen.</small>}
+        </span>
+        <span className={`tournament-match__team${winnerId === match.awayId ? " is-winner" : ""}`} style={{ "--team-color": away?.color }}>{away?.name}</span>
+        {match.status === "pending" && (
+          <button type="button" className="btn-primary tournament-match__btn" onClick={() => startMatch(tournament, match.id)}>
+            Comecar partida
+          </button>
+        )}
+        {match.status === "live" && (
+          <button type="button" className="tournament-match__btn tournament-match__btn--live" onClick={() => onOpenMatch(match.id)}>
+            Ao vivo
+          </button>
+        )}
+        {match.status === "finished" && <span className="tournament-match__done">Encerrada</span>}
+      </div>
+    );
+  }
 
   return (
     <div className="tournament">
@@ -146,72 +185,67 @@ export function TournamentSection({ tournament, onReset, onAwardTitle, onOpenMat
 
       <div className="tournament-grid">
         <div className="tournament-matches">
-          {matches.map((match) => {
-            const home = teamsById.get(match.homeId);
-            const away = teamsById.get(match.awayId);
-            const score = getMatchScore(match);
-            return (
-              <div key={match.id} className={`tournament-match tournament-match--${match.status}`}>
-                <span className="tournament-match__number">#{match.number}</span>
-                <span className="tournament-match__team" style={{ "--team-color": home?.color }}>{home?.name}</span>
-                <span className="tournament-match__score">
-                  {match.status === "pending" ? "x" : `${score.home} x ${score.away}`}
-                </span>
-                <span className="tournament-match__team" style={{ "--team-color": away?.color }}>{away?.name}</span>
-                {match.status === "pending" && (
-                  <button type="button" className="btn-primary tournament-match__btn" onClick={() => startMatch(tournament, match.id)}>
-                    Comecar partida
-                  </button>
-                )}
-                {match.status === "live" && (
-                  <button type="button" className="tournament-match__btn tournament-match__btn--live" onClick={() => onOpenMatch(match.id)}>
-                    Ao vivo
-                  </button>
-                )}
-                {match.status === "finished" && <span className="tournament-match__done">Encerrada</span>}
-              </div>
-            );
-          })}
+          <h4 className="tournament-stage-title">Fase de grupos</h4>
+          {groupMatches.map(renderMatchRow)}
         </div>
 
-        <div className="players-scroll">
-          <table className="simple-table tournament-table">
-            <thead>
-              <tr>
-                <th>Time</th>
-                <th>P</th>
-                <th>J</th>
-                <th>V</th>
-                <th>E</th>
-                <th>D</th>
-                <th>SG</th>
-              </tr>
-            </thead>
-            <tbody>
-              {standings.map((row) => (
-                <tr key={row.team.id}>
-                  <td><span className="team-dot" style={{ background: row.team.color }} />{row.team.name}</td>
-                  <td><strong>{row.points}</strong></td>
-                  <td>{row.played}</td>
-                  <td>{row.wins}</td>
-                  <td>{row.draws}</td>
-                  <td>{row.losses}</td>
-                  <td>{row.goalDiff}</td>
+        <div>
+          <h4 className="tournament-stage-title">Classificacao</h4>
+          <div className="players-scroll">
+            <table className="simple-table tournament-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Time</th>
+                  <th>P</th>
+                  <th>J</th>
+                  <th>V</th>
+                  <th>E</th>
+                  <th>D</th>
+                  <th>SG</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {standings.map((row, index) => (
+                  <tr key={row.team.id}>
+                    <td>{index + 1}º</td>
+                    <td><span className="team-dot" style={{ background: row.team.color }} />{row.team.name}</td>
+                    <td><strong>{row.points}</strong></td>
+                    <td>{row.played}</td>
+                    <td>{row.wins}</td>
+                    <td>{row.draws}</td>
+                    <td>{row.losses}</td>
+                    <td>{row.goalDiff}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
+
+      {hasPlayoffs && (
+        <div className="tournament-matches tournament-knockout">
+          <h4 className="tournament-stage-title">Mata-mata</h4>
+          {knockoutMatches.length ? (
+            knockoutMatches.map(renderMatchRow)
+          ) : (
+            <p className="sync-note">Semifinais (1º x 4º e 2º x 3º) aparecem quando a fase de grupos terminar.</p>
+          )}
+          {knockoutMatches.length > 0 && knockoutMatches.every((match) => getStage(match) === "semi") && (
+            <p className="sync-note">Final e disputa de 3º lugar aparecem quando as duas semifinais terminarem.</p>
+          )}
+        </div>
+      )}
 
       {champion && (
         <div className="tournament-champion">
           <Trophy size={20} />
-          <span>Campeao da semana: <strong>{champion.team.name}</strong> ({champion.points} pts)</span>
+          <span>Campeao da semana: <strong>{champion.name}</strong></span>
           {tournament.titleAwarded ? (
             <span className="tournament-match__done">Titulo registrado</span>
           ) : (
-            <button type="button" className="btn-primary" onClick={() => onAwardTitle(champion.team)}>
+            <button type="button" className="btn-primary" onClick={() => onAwardTitle(champion)}>
               Dar titulo aos campeoes
             </button>
           )}
@@ -240,6 +274,7 @@ export function MatchScreen({ tournament, matchId, onMinimize, onCommitStats }) 
   const teamsById = useMemo(() => new Map(getTeams(tournament).map((team) => [team.id, team])), [tournament]);
   const now = useNow(Boolean(match));
   const whistledRef = useRef(false);
+  const [pickingWinner, setPickingWinner] = useState(false);
   useWakeLock(Boolean(match));
 
   const remainingMs = match ? getRemainingMs(match.timer, now) : 0;
@@ -264,6 +299,7 @@ export function MatchScreen({ tournament, matchId, onMinimize, onCommitStats }) 
   const score = getMatchScore(match);
   const timer = match.timer || {};
   const editable = match.status === "live";
+  const isKnockout = getStage(match) !== "group";
   const update = (edit) => liveStore.update(updateMatch(matchId, edit));
 
   function toggleTimer() {
@@ -302,10 +338,20 @@ export function MatchScreen({ tournament, matchId, onMinimize, onCommitStats }) 
     update((current) => ({ ...current, events: asList(current.events).filter((event) => event.id !== eventId) }));
   }
 
-  async function endMatch() {
+  function endMatch() {
+    // A knockout match can't end tied: ask who went through before finishing.
+    if (isKnockout && score.home === score.away) {
+      setPickingWinner(true);
+      return;
+    }
     if (!window.confirm(`Encerrar partida: ${home?.name} ${score.home} x ${score.away} ${away?.name}? Os gols e assistencias entram nas estatisticas da temporada.`)) {
       return;
     }
+    finishMatch(null);
+  }
+
+  async function finishMatch(winnerId) {
+    setPickingWinner(false);
     const at = liveStore.now();
     let finishedEvents = null;
     await liveStore.update((state) => {
@@ -321,9 +367,15 @@ export function MatchScreen({ tournament, matchId, onMinimize, onCommitStats }) 
       const next = updateMatch(matchId, (current) => {
         const currentTimer = current.timer || {};
         const elapsedMs = (currentTimer.elapsedMs || 0) + (currentTimer.running ? Math.max(0, at - currentTimer.startedAt) : 0);
-        return { ...current, status: "finished", timer: { ...currentTimer, running: false, elapsedMs } };
+        return {
+          ...current,
+          status: "finished",
+          ...(winnerId ? { winnerId } : {}),
+          timer: { ...currentTimer, running: false, elapsedMs },
+        };
       })(state);
-      return { ...next, activeMatchId: state.activeMatchId === matchId ? null : state.activeMatchId };
+      // Creates the next knockout round (semis, then 3rd place + final) when this match closes a round.
+      return withPlayoffs({ ...next, activeMatchId: state.activeMatchId === matchId ? null : state.activeMatchId });
     });
     // Only the phone whose transaction actually finished the match writes to the season stats.
     if (finishedEvents) {
@@ -394,7 +446,7 @@ export function MatchScreen({ tournament, matchId, onMinimize, onCommitStats }) 
           <ChevronDown size={22} />
         </button>
         <span className="match-title">
-          {match.status === "live" ? <><span className="live-dot" /> Partida {match.number}</> : `Partida ${match.number} - encerrada`}
+          {match.status === "live" ? <><span className="live-dot" /> {getMatchLabel(match)}</> : `${getMatchLabel(match)} - encerrada`}
         </span>
         <span className="match-mode">{liveStore.mode === "firebase" ? "ao vivo" : "local"}</span>
       </div>
@@ -451,7 +503,27 @@ export function MatchScreen({ tournament, matchId, onMinimize, onCommitStats }) 
         </ul>
       )}
 
-      {editable && (
+      {editable && pickingWinner && (
+        <div className="match-tiebreak" role="group" aria-label="Quem passou">
+          <p><strong>Empate!</strong> Quem passou? (penaltis ou a regra de voces)</p>
+          <div className="match-tiebreak__options">
+            {[home, away].map((team) => team && (
+              <button
+                type="button"
+                key={team.id}
+                className="match-tiebreak__team"
+                style={{ "--team-color": team.color }}
+                onClick={() => finishMatch(team.id)}
+              >
+                {team.name}
+              </button>
+            ))}
+          </div>
+          <button type="button" className="row-btn cancel" onClick={() => setPickingWinner(false)}>Voltar</button>
+        </div>
+      )}
+
+      {editable && !pickingWinner && (
         <div className="match-footer">
           <button type="button" className="row-btn cancel" onClick={cancelMatch}>Cancelar partida</button>
           <button type="button" className="btn-primary" onClick={endMatch}>Encerrar partida</button>
