@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Shield, Star, Trophy, TrendingUp, Users, ArrowRight, Menu, X, Zap } from "lucide-react";
 import initialPlayers from "./data/players.json";
+import { LiveMatchBar, MatchScreen, TournamentSection, useLiveTournament } from "./live/LiveMatch";
+import { liveStore } from "./live/liveStore";
+import { createTournament, getMatches, TEAM_COLORS } from "./live/tournament";
+import { exportTeamsImage } from "./live/teamsImage";
 
 const groupLink = "https://wa.me/5511999999999?text=Quero%20participar%20do%20Fut%20de%20Terca";
 const STORAGE_KEY = "fut-terca-players";
@@ -16,6 +20,11 @@ const DEFAULT_PLAYER_IS_MONTHLY = false;
 const DEFAULT_PLAYER_JOIN_DATE = "";
 const MONTHLY_LIST_SIZE = 18;
 const TEAM_SIZE = 4;
+const WEEKLY_TEAMS_COUNT = 4;
+const WEEKLY_LINE_PLAYERS = WEEKLY_TEAMS_COUNT * TEAM_SIZE;
+const WEEKLY_KEEPERS = 2;
+const WEEKLY_SELECTION_KEY = "fut-terca-weekly-selection";
+const SAVE_DEBOUNCE_MS = 1200;
 const PAIR_HISTORY_DECAY = 0.95;
 const PAIR_HISTORY_INCREMENT = 2;
 const PAIR_REPEAT_WEIGHT = 8;
@@ -567,6 +576,11 @@ export default function LandingPage() {
   const [sortDirection, setSortDirection] = useState("asc");
   const [teamsDrawSeed, setTeamsDrawSeed] = useState(Date.now());
   const [weeklySelectedPlayerIds, setWeeklySelectedPlayerIds] = useState([]);
+  const [weeklyKeeperIds, setWeeklyKeeperIds] = useState([]);
+  const { tournament: liveTournament } = useLiveTournament();
+  const [openedMatchId, setOpenedMatchId] = useState(null);
+  const [minimizedMatchId, setMinimizedMatchId] = useState(null);
+  const [customExportBackground, setCustomExportBackground] = useState(null);
   const [balancedTeams, setBalancedTeams] = useState([]);
   const [teamPairHistory, setTeamPairHistory] = useState(() => loadTeamPairHistory());
   const [syncStatus, setSyncStatus] = useState(SHEETS_API_URL ? "syncing" : "local");
@@ -590,6 +604,9 @@ export default function LandingPage() {
   const hasHydratedRemoteRef = useRef(false);
   const hasInitializedWeeklySelectionRef = useRef(false);
   const lastLocalMutationRef = useRef(0);
+  const pendingSaveRef = useRef(null);
+  const isSavingRef = useRef(false);
+  const saveTimerRef = useRef(null);
   const nextPlayerId = useRef(Math.max(...initialState.map((player) => player.id), 0) + 1);
   const [players, setPlayers] = useState(initialState);
 
@@ -653,23 +670,57 @@ export default function LandingPage() {
     };
   }, []);
 
-  async function syncPlayersNow(nextPlayers) {
+  // Changes show up on screen immediately; saving to Sheets happens in the background.
+  // Clicks within SAVE_DEBOUNCE_MS are batched into a single request, and only the latest list is sent.
+  async function flushPendingSave() {
+    saveTimerRef.current = null;
+    if (isSavingRef.current || !pendingSaveRef.current) {
+      return;
+    }
+
+    const playersToSave = pendingSaveRef.current;
+    pendingSaveRef.current = null;
+    isSavingRef.current = true;
+    try {
+      await savePlayersToSheets(SHEETS_API_URL, playersToSave);
+      setSyncStatus(pendingSaveRef.current ? "pending" : "online");
+    } catch {
+      // Keep the failed list queued so the next change (or retry) sends it again.
+      pendingSaveRef.current = pendingSaveRef.current || playersToSave;
+      setSyncStatus("error");
+    } finally {
+      isSavingRef.current = false;
+      lastLocalMutationRef.current = Date.now();
+      if (pendingSaveRef.current && !saveTimerRef.current) {
+        saveTimerRef.current = setTimeout(flushPendingSave, SAVE_DEBOUNCE_MS);
+      }
+    }
+  }
+
+  function syncPlayersNow(nextPlayers) {
     if (!SHEETS_API_URL || !hasHydratedRemoteRef.current) {
       return;
     }
 
     lastLocalMutationRef.current = Date.now();
-    setSyncStatus("syncing");
-    setIsMutating(true);
-    try {
-      await savePlayersToSheets(SHEETS_API_URL, nextPlayers);
-      setSyncStatus("online");
-    } catch {
-      setSyncStatus("local");
-    } finally {
-      setIsMutating(false);
+    pendingSaveRef.current = nextPlayers;
+    setSyncStatus("pending");
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
     }
+    saveTimerRef.current = setTimeout(flushPendingSave, SAVE_DEBOUNCE_MS);
   }
+
+  useEffect(() => {
+    const warnUnsaved = (event) => {
+      if (pendingSaveRef.current || isSavingRef.current) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", warnUnsaved);
+    return () => window.removeEventListener("beforeunload", warnUnsaved);
+  }, []);
 
   useEffect(() => {
     if (!SHEETS_API_URL) {
@@ -681,13 +732,16 @@ export default function LandingPage() {
         return;
       }
 
-      // Prevent polling from overriding a very recent local edit.
-      if (Date.now() - lastLocalMutationRef.current < 3000) {
+      // Prevent polling from overriding local edits that are queued, saving, or very recent.
+      if (pendingSaveRef.current || isSavingRef.current || Date.now() - lastLocalMutationRef.current < 3000) {
         return;
       }
 
       try {
         const remotePlayers = await fetchPlayersFromSheets(SHEETS_API_URL);
+        if (pendingSaveRef.current || isSavingRef.current) {
+          return;
+        }
         setPlayers((current) => (playersChanged(current, remotePlayers) ? remotePlayers : current));
         setSyncStatus("online");
       } catch {
@@ -877,23 +931,51 @@ export default function LandingPage() {
     [consolidatedPlayers]
   );
 
+  const weeklyAvailableKeepers = useMemo(
+    () => [...consolidatedPlayers].filter((player) => isGoalkeeper(player)).sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
+    [consolidatedPlayers]
+  );
+
+  // The weekly selection starts empty and is remembered on this device, so a refresh at the pitch keeps it.
   useEffect(() => {
-    const availableIds = new Set(weeklyAvailablePlayers.map((player) => player.id));
-
-    setWeeklySelectedPlayerIds((current) => {
-      if (!hasInitializedWeeklySelectionRef.current) {
-        hasInitializedWeeklySelectionRef.current = true;
-        return weeklyAvailablePlayers.map((player) => player.id);
+    if (!hasInitializedWeeklySelectionRef.current) {
+      hasInitializedWeeklySelectionRef.current = true;
+      try {
+        const stored = JSON.parse(window.localStorage.getItem(WEEKLY_SELECTION_KEY) || "{}");
+        setWeeklySelectedPlayerIds(Array.isArray(stored.players) ? stored.players : []);
+        setWeeklyKeeperIds(Array.isArray(stored.keepers) ? stored.keepers : []);
+      } catch {
+        // Start empty when storage is unavailable.
       }
+      return;
+    }
 
-      return current.filter((id) => availableIds.has(id));
-    });
-  }, [weeklyAvailablePlayers]);
+    const availableIds = new Set(weeklyAvailablePlayers.map((player) => player.id));
+    const availableKeeperIds = new Set(weeklyAvailableKeepers.map((player) => player.id));
+    setWeeklySelectedPlayerIds((current) => current.filter((id) => availableIds.has(id)));
+    setWeeklyKeeperIds((current) => current.filter((id) => availableKeeperIds.has(id)));
+  }, [weeklyAvailablePlayers, weeklyAvailableKeepers]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        WEEKLY_SELECTION_KEY,
+        JSON.stringify({ players: weeklySelectedPlayerIds, keepers: weeklyKeeperIds })
+      );
+    } catch {
+      // Ignore storage errors.
+    }
+  }, [weeklySelectedPlayerIds, weeklyKeeperIds]);
 
   const weeklySelectedPlayers = useMemo(() => {
     const selectedIds = new Set(weeklySelectedPlayerIds);
     return weeklyAvailablePlayers.filter((player) => selectedIds.has(player.id));
   }, [weeklyAvailablePlayers, weeklySelectedPlayerIds]);
+
+  const weeklyKeepers = useMemo(() => {
+    const selectedIds = new Set(weeklyKeeperIds);
+    return weeklyAvailableKeepers.filter((player) => selectedIds.has(player.id));
+  }, [weeklyAvailableKeepers, weeklyKeeperIds]);
 
   const filteredWeeklyAvailablePlayers = useMemo(() => {
     const term = weeklySearchTerm.trim().toLowerCase();
@@ -903,7 +985,7 @@ export default function LandingPage() {
     return weeklyAvailablePlayers.filter((player) => player.name.toLowerCase().includes(term));
   }, [weeklyAvailablePlayers, weeklySearchTerm]);
 
-  const weeklyTeamsCount = Math.floor(weeklySelectedPlayers.length / TEAM_SIZE);
+  const weeklyTeamsCount = Math.min(WEEKLY_TEAMS_COUNT, Math.floor(weeklySelectedPlayers.length / TEAM_SIZE));
   const weeklyReservePlayers = useMemo(
     () => weeklySelectedPlayers.slice(weeklyTeamsCount * TEAM_SIZE),
     [weeklySelectedPlayers, weeklyTeamsCount]
@@ -914,24 +996,135 @@ export default function LandingPage() {
   }, [weeklySelectedPlayers, weeklyTeamsCount, teamsDrawSeed, teamPairHistory]);
 
   function toggleWeeklyPlayer(playerId) {
-    setWeeklySelectedPlayerIds((current) =>
-      current.includes(playerId) ? current.filter((id) => id !== playerId) : [...current, playerId]
-    );
+    setWeeklySelectedPlayerIds((current) => {
+      if (current.includes(playerId)) {
+        return current.filter((id) => id !== playerId);
+      }
+      return current.length >= WEEKLY_LINE_PLAYERS ? current : [...current, playerId];
+    });
   }
 
-  function selectAllWeeklyPlayers() {
-    setWeeklySelectedPlayerIds(weeklyAvailablePlayers.map((player) => player.id));
+  function toggleWeeklyKeeper(playerId) {
+    setWeeklyKeeperIds((current) => {
+      if (current.includes(playerId)) {
+        return current.filter((id) => id !== playerId);
+      }
+      return current.length >= WEEKLY_KEEPERS ? current : [...current, playerId];
+    });
+  }
+
+  function selectMonthlyWeeklyPlayers() {
+    const monthlyIds = new Set(monthlyPlayers.slice(0, MONTHLY_LIST_SIZE).map((player) => player.id));
+    setWeeklySelectedPlayerIds(
+      weeklyAvailablePlayers.filter((player) => monthlyIds.has(player.id)).slice(0, WEEKLY_LINE_PLAYERS).map((player) => player.id)
+    );
+    setWeeklyKeeperIds(
+      weeklyAvailableKeepers.filter((player) => monthlyIds.has(player.id)).slice(0, WEEKLY_KEEPERS).map((player) => player.id)
+    );
   }
 
   function clearWeeklyPlayers() {
     setWeeklySelectedPlayerIds([]);
+    setWeeklyKeeperIds([]);
   }
 
   function redrawTeams() {
-    if (balancedTeams.length) {
-      setTeamPairHistory((current) => updatePairHistoryWithTeams(current, balancedTeams));
-    }
     setTeamsDrawSeed((current) => current + 1);
+  }
+
+  // The chosen photo stays in memory on this device; it is only drawn into the exported image.
+  function handleExportBackgroundChange(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setCustomExportBackground(reader.result);
+    reader.readAsDataURL(file);
+  }
+
+  const hasPlayedMatches = getMatches(liveTournament).some((match) => match.status !== "pending");
+
+  // Freezes the drawn teams into the shared tournament. Pair history is recorded here (teams that
+  // actually played), not on every redraw.
+  function confirmTeams() {
+    if (balancedTeams.length < 2) {
+      return;
+    }
+    if (liveTournament && !window.confirm(
+      hasPlayedMatches
+        ? "Ja existe um chaveamento com partidas jogadas. Substituir pelos novos times?"
+        : "Substituir o chaveamento atual pelos novos times?"
+    )) {
+      return;
+    }
+    const tournament = createTournament(balancedTeams, weeklyKeepers, liveStore.now());
+    liveStore.update(() => tournament);
+    setTeamPairHistory((current) => updatePairHistoryWithTeams(current, balancedTeams));
+    setMinimizedMatchId(null);
+    setOpenedMatchId(null);
+    setTimeout(() => scrollTo("chaveamento"), 50);
+  }
+
+  function resetTournament() {
+    if (!window.confirm("Apagar o chaveamento atual? As estatisticas ja lancadas continuam salvas.")) {
+      return;
+    }
+    liveStore.update(() => null);
+  }
+
+  function openMatch(matchId) {
+    setOpenedMatchId(matchId);
+    setMinimizedMatchId(null);
+  }
+
+  function minimizeMatch(matchId) {
+    setMinimizedMatchId(matchId);
+    setOpenedMatchId(null);
+  }
+
+  const activeMatchId = liveTournament?.activeMatchId || null;
+  const visibleMatchId = openedMatchId || (activeMatchId && activeMatchId !== minimizedMatchId ? activeMatchId : null);
+
+  // Adds the goals/assists of a finished match to the season totals (ids are the consolidated ones).
+  function commitMatchStats(deltas) {
+    const ids = Object.keys(deltas);
+    if (!ids.length) {
+      return;
+    }
+    const nextPlayers = players.map((player) => {
+      const delta = deltas[player.id];
+      return delta
+        ? { ...player, goals: (player.goals || 0) + delta.goals, assists: (player.assists || 0) + delta.assists }
+        : player;
+    });
+    setPlayers(nextPlayers);
+    syncPlayersNow(nextPlayers);
+  }
+
+  async function awardTitle(team) {
+    if (!window.confirm(`Dar +1 titulo para cada jogador do ${team.name}?`)) {
+      return;
+    }
+    let awarded = false;
+    await liveStore.update((state) => {
+      awarded = false;
+      if (!state || state.titleAwarded) {
+        return state;
+      }
+      awarded = true;
+      return { ...state, titleAwarded: true };
+    });
+    if (!awarded) {
+      return;
+    }
+    const championIds = new Set(team.players.map((player) => player.id));
+    const nextPlayers = players.map((player) =>
+      championIds.has(player.id) ? { ...player, championships: (player.championships || 0) + 1 } : player
+    );
+    setPlayers(nextPlayers);
+    syncPlayersNow(nextPlayers);
   }
 
   function clearPairHistory() {
@@ -1466,20 +1659,21 @@ export default function LandingPage() {
       <section id="times" className="section-pad">
         <div className="container">
           <div className="section-header">
-            <p className="section-eyebrow">Times equilibrados</p>
-            <h2>Montagem automatica por overall</h2>
-            <p className="sync-note">Overall ponderado por posicao: ataque prioriza finalizacao e velocidade, meio prioriza passe e velocidade, defesa prioriza defesa e velocidade.</p>
-            <p className="sync-note">Goleiros sao fixos e ficam fora do sorteio das linhas.</p>
-            <p className="sync-note">O algoritmo prioriza o balanceamento do overall; posicoes ficam em segundo plano.</p>
+            <p className="section-eyebrow">Sorteio da semana</p>
+            <h2>Monte os {WEEKLY_TEAMS_COUNT} times</h2>
+            <p className="sync-note">Escolha os {WEEKLY_LINE_PLAYERS} jogadores de linha e os {WEEKLY_KEEPERS} goleiros. Os goleiros jogam para todos os times e ficam fora do sorteio.</p>
+            <p className="sync-note">O sorteio equilibra o overall de cada time, depois as posicoes (1 defesa, 2 meio, 1 ataque) e evita repetir parcerias.</p>
           </div>
 
           <div className="weekly-selection">
             <div className="weekly-selection-head">
-              <h3>Jogadores da semana</h3>
-              <p>{weeklySelectedPlayerIds.length} selecionados</p>
+              <h3>Jogadores de linha</h3>
+              <p className={weeklySelectedPlayers.length === WEEKLY_LINE_PLAYERS ? "weekly-count weekly-count--full" : "weekly-count"}>
+                {weeklySelectedPlayers.length}/{WEEKLY_LINE_PLAYERS}
+              </p>
             </div>
             <div className="weekly-selection-actions">
-              <button type="button" className="sort-toggle" onClick={selectAllWeeklyPlayers}>Selecionar todos</button>
+              <button type="button" className="sort-toggle" onClick={selectMonthlyWeeklyPlayers}>Puxar mensalistas</button>
               <button type="button" className="sort-toggle" onClick={clearWeeklyPlayers}>Limpar</button>
             </div>
             <input
@@ -1492,12 +1686,14 @@ export default function LandingPage() {
             <div className="weekly-players-grid">
               {filteredWeeklyAvailablePlayers.map((player) => {
                 const checked = weeklySelectedPlayerIds.includes(player.id);
+                const isFull = !checked && weeklySelectedPlayers.length >= WEEKLY_LINE_PLAYERS;
                 const tier = getCardTier(player);
                 return (
-                  <label key={player.id} className={`weekly-player-item weekly-player-item--${tier}${checked ? " checked" : ""}`}>
+                  <label key={player.id} className={`weekly-player-item weekly-player-item--${tier}${checked ? " checked" : ""}${isFull ? " disabled" : ""}`}>
                     <input
                       type="checkbox"
                       checked={checked}
+                      disabled={isFull}
                       onChange={() => toggleWeeklyPlayer(player.id)}
                     />
                     <span className="weekly-player-item__name">{player.name}</span>
@@ -1509,70 +1705,104 @@ export default function LandingPage() {
                 <p className="weekly-empty">Nenhum jogador encontrado na busca.</p>
               )}
             </div>
+
+            <div className="weekly-selection-head weekly-selection-head--keepers">
+              <h3>Goleiros</h3>
+              <p className={weeklyKeepers.length === WEEKLY_KEEPERS ? "weekly-count weekly-count--full" : "weekly-count"}>
+                {weeklyKeepers.length}/{WEEKLY_KEEPERS}
+              </p>
+            </div>
+            <div className="keeper-picker">
+              {weeklyAvailableKeepers.map((player) => {
+                const selected = weeklyKeeperIds.includes(player.id);
+                return (
+                  <button
+                    type="button"
+                    key={player.id}
+                    className={`keeper-chip${selected ? " selected" : ""}`}
+                    disabled={!selected && weeklyKeepers.length >= WEEKLY_KEEPERS}
+                    onClick={() => toggleWeeklyKeeper(player.id)}
+                  >
+                    🧤 {player.name}
+                  </button>
+                );
+              })}
+              {!weeklyAvailableKeepers.length && (
+                <p className="weekly-empty">Nenhum goleiro cadastrado. Marque a funcao "goleiro" no cadastro.</p>
+              )}
+            </div>
           </div>
 
-          {weeklySelectedPlayers.length ? (
+          {weeklyTeamsCount >= 2 ? (
             <>
               <div className="teams-controls">
-                <strong>Times fechados: {weeklyTeamsCount}</strong>
-                <span>{weeklyReservePlayers.length} reserva(s) para completar o próximo time de {TEAM_SIZE}</span>
-                <button
-                  type="button"
-                  className="sort-toggle"
-                  onClick={redrawTeams}
-                  disabled={!balancedTeams.length}
-                >
-                  Sortear novamente
+                <button type="button" className="sort-toggle" onClick={redrawTeams}>
+                  🎲 Sortear novamente
                 </button>
-                <button
-                  type="button"
-                  className="sort-toggle"
-                  onClick={clearPairHistory}
-                >
-                  Zerar historico de parcerias
+                <button type="button" className="sort-toggle" onClick={() => exportTeamsImage(balancedTeams, weeklyKeepers, customExportBackground, { displayOVR, getCardTier })}>
+                  📸 Exportar imagem
                 </button>
-                <button
-                  type="button"
-                  className="btn-primary teams-export-btn"
-                  onClick={exportTeamsToWhatsApp}
-                  disabled={!balancedTeams.length}
-                >
-                  Exportar para WhatsApp
+                <label className="sort-toggle teams-bg-picker">
+                  🖼️ {customExportBackground ? "Trocar foto de fundo" : "Escolher foto de fundo"}
+                  <input type="file" accept="image/*" onChange={handleExportBackgroundChange} hidden />
+                </label>
+                {customExportBackground && (
+                  <button type="button" className="sort-toggle" onClick={() => setCustomExportBackground(null)}>Remover foto</button>
+                )}
+                <button type="button" className="sort-toggle" onClick={exportTeamsToWhatsApp}>
+                  Enviar como texto
+                </button>
+                <button type="button" className="btn-primary teams-export-btn" onClick={confirmTeams}>
+                  Confirmar times e montar chaveamento
                 </button>
               </div>
-            <div className="teams-grid">
-              {balancedTeams.map((team) => (
-                <article key={team.id} className="team-card">
-                  <h3>{team.name}</h3>
-                    <p className="team-meta">{team.players.length}/{TEAM_SIZE} jogadores</p>
-                  <ul>
-                    {team.players.map((player) => (
-                      <li key={player.id}>
-                        <span>{player.name}</span>
-                        <small>{sanitizeRole(player.role) === "goleiro" ? "Goleiro" : sanitizeLinePosition(player.linePosition)} · OVR {displayOVR(player)}</small>
-                      </li>
-                    ))}
-                  </ul>
-                </article>
-              ))}
+              {weeklySelectedPlayers.length < WEEKLY_LINE_PLAYERS && (
+                <p className="sync-note">Faltam {WEEKLY_LINE_PLAYERS - weeklySelectedPlayers.length} jogador(es) para fechar os {WEEKLY_TEAMS_COUNT} times. {weeklyReservePlayers.length > 0 && `${weeklyReservePlayers.length} ficam de reserva por enquanto.`}</p>
+              )}
+              <div className="teams-grid" key={teamsDrawSeed}>
+                {balancedTeams.map((team, teamIndex) => {
+                  const color = TEAM_COLORS[teamIndex % TEAM_COLORS.length];
+                  const teamOvr = Math.round(team.players.reduce((sum, player) => sum + displayOVR(player), 0) / Math.max(1, team.players.length));
+                  return (
+                    <article
+                      key={team.id}
+                      className="team-card team-card--reveal"
+                      style={{ "--team-color": color, animationDelay: `${teamIndex * 180}ms` }}
+                    >
+                      <header className="team-card__head">
+                        <h3>{team.name}</h3>
+                        <span className="team-card__ovr">OVR {teamOvr}</span>
+                      </header>
+                      <ul>
+                        {team.players.map((player) => (
+                          <li key={player.id}>
+                            <span className={`team-card__badge team-card__badge--${getCardTier(player)}`}>{displayOVR(player)}</span>
+                            <span className="team-card__name">{player.name}</span>
+                            <small>{sanitizeLinePosition(player.linePosition)}</small>
+                          </li>
+                        ))}
+                      </ul>
+                    </article>
+                  );
+                })}
               </div>
-              {weeklyReservePlayers.length > 0 && (
-                <div className="reserve-card">
-                  <h3>Reservas para o próximo time</h3>
-                  <p className="team-meta">Ficam de fora da montagem atual até fechar {TEAM_SIZE}.</p>
-                  <ul>
-                    {weeklyReservePlayers.map((player) => (
-                      <li key={player.id}>
-                        <span>{player.name}</span>
-                        <small>{sanitizeRole(player.role) === "goleiro" ? "Goleiro" : sanitizeLinePosition(player.linePosition)} · OVR {displayOVR(player)}</small>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+              {weeklyKeepers.length > 0 && (
+                <p className="teams-keepers">🧤 Goleiros (jogam para todos): {weeklyKeepers.map((player) => player.name).join(" e ")}</p>
               )}
             </>
           ) : (
-            <p className="sync-note">Selecione pelo menos {TEAM_SIZE} jogadores para montar os times.</p>
+            <p className="sync-note">Selecione pelo menos {TEAM_SIZE * 2} jogadores de linha para montar os times.</p>
+          )}
+
+          {liveTournament && (
+            <div id="chaveamento">
+              <TournamentSection
+                tournament={liveTournament}
+                onReset={resetTournament}
+                onAwardTitle={awardTitle}
+                onOpenMatch={openMatch}
+              />
+            </div>
           )}
         </div>
       </section>
@@ -1639,6 +1869,8 @@ export default function LandingPage() {
               {syncStatus === "online" && "Sincronizado com Google Sheets"}
               {syncStatus === "syncing" && "Sincronizando com Google Sheets..."}
               {syncStatus === "local" && "Modo local (sem conexao com Google Sheets)"}
+              {syncStatus === "pending" && "Salvando no Google Sheets..."}
+              {syncStatus === "error" && "Falha ao salvar no Google Sheets, tentando de novo..."}
             </p>
           </div>
           <div className="register-grid">
@@ -2118,13 +2350,20 @@ export default function LandingPage() {
         </div>
       </footer>
 
-      {isMutating && (
-        <div className="action-loading-overlay" role="status" aria-live="polite" aria-label="Salvando alteracoes">
-          <div className="action-loading-box">
-            <div className="sync-spinner" aria-hidden="true" />
-            <p>Salvando alteracoes...</p>
-          </div>
+      {(syncStatus === "pending" || syncStatus === "error") && (
+        <div className={`save-toast${syncStatus === "error" ? " save-toast--error" : ""}`} role="status" aria-live="polite">
+          {syncStatus === "error" ? "Falha ao salvar, tentando de novo..." : "Salvando..."}
         </div>
+      )}
+
+      <LiveMatchBar tournament={liveTournament} onOpen={openMatch} />
+      {visibleMatchId && (
+        <MatchScreen
+          tournament={liveTournament}
+          matchId={visibleMatchId}
+          onMinimize={() => minimizeMatch(visibleMatchId)}
+          onCommitStats={commitMatchStats}
+        />
       )}
     </div>
   );
