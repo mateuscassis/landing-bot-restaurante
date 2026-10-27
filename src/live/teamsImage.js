@@ -1,3 +1,4 @@
+import { PHOTO_BACKGROUNDS } from "./backgrounds";
 import { TEAM_COLORS } from "./tournament";
 
 // Draws the weekly teams into a 1080x1350 image (WhatsApp friendly) and opens the share sheet,
@@ -6,6 +7,7 @@ import { TEAM_COLORS } from "./tournament";
 
 const WIDTH = 1080;
 const HEIGHT = 1350;
+const PHOTO_CHANCE = 0.75;
 
 const CAPTIONS = [
   "Escalação aprovada pelo VAR",
@@ -200,11 +202,17 @@ async function renderTeamsImage(teams, keepers, backgroundSrc, helpers) {
     // Fall back to system fonts.
   }
 
+  // A photo chosen by the user wins; otherwise most exports get a random stadium/player photo and
+  // the rest a drawn theme.
+  const stockPhoto = !backgroundSrc && Math.random() < PHOTO_CHANCE ? pick(PHOTO_BACKGROUNDS) : null;
   let usedPhoto = false;
-  if (backgroundSrc) {
+  let photoCredit = "";
+  const photoSrc = backgroundSrc || stockPhoto?.src;
+  if (photoSrc) {
     try {
-      drawPhotoBackground(ctx, await loadImage(backgroundSrc));
+      drawPhotoBackground(ctx, await loadImage(photoSrc));
       usedPhoto = true;
+      photoCredit = stockPhoto ? `Foto: ${stockPhoto.credit} · ${stockPhoto.license} · Wikimedia Commons` : "";
     } catch {
       usedPhoto = false;
     }
@@ -269,6 +277,13 @@ async function renderTeamsImage(teams, keepers, backgroundSrc, helpers) {
   ctx.fillStyle = "#f5c842";
   ctx.font = '56px "Bebas Neue", Arial, sans-serif';
   ctx.fillText(`“${pick(CAPTIONS)}”`, WIDTH / 2, HEIGHT - 60);
+
+  if (photoCredit) {
+    ctx.fillStyle = "rgba(255,255,255,0.6)";
+    ctx.font = '500 18px "Montserrat", Arial, sans-serif';
+    ctx.textAlign = "right";
+    ctx.fillText(photoCredit, WIDTH - 24, HEIGHT - 18);
+  }
 
   return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
 }
